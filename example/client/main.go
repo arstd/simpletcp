@@ -1,10 +1,10 @@
 package main
 
 import (
-	"log"
 	"math"
 	"time"
 
+	"github.com/arstd/log"
 	"github.com/arstd/simpletcp"
 	"github.com/arstd/simpletcp/example/random"
 )
@@ -67,21 +67,18 @@ func useFrame(period time.Duration) {
 			DataType:    simpletcp.DataTypePlain,
 		},
 	}
-	received := frame // struct copy
 
-	buf := make([]byte, simpletcp.MaxLength)
 	for i := 0; i < count; i++ {
 		// frame.MessageId = client.NextMessageId()
 		// frame.MessageId = uint32(i + 1)
 		frame.MessageId = 0 // 如果未设置， client 会分配 MessageId
 
 		frame.Data = random.Bytes(3)
-		received.Data = buf // 不会重新分配内存
 
-		err := client.SendFrame(&frame, &received)
+		received, err := client.SendFrame(&frame)
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Printf("%+v", received)
+		log.Debugf("%v", received)
 	}
 }

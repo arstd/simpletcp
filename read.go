@@ -7,7 +7,14 @@ import (
 	"io"
 )
 
-func (f *Frame) Read(br *bufio.Reader) (err error) {
+func Read(br *bufio.Reader, fixedHeader [2]byte, maxLength uint32) (f *Frame, err error) {
+	f = &Frame{
+		Header: Header{
+			FixedHeader: fixedHeader,
+			MaxLength:   maxLength,
+		},
+	}
+
 	// read fixed header
 	if err = expectByte(br, "fixed header[0]", f.FixedHeader[0]); err != nil {
 		return
@@ -45,18 +52,9 @@ func (f *Frame) Read(br *bufio.Reader) (err error) {
 	}
 
 	// read data
-	return f.ReadData(br)
-}
-
-func (f *Frame) ReadData(r io.Reader) (err error) {
-	if len(f.Data) < int(f.DataLength) {
-		f.Data = make([]byte, f.DataLength)
-	} else {
-		f.Data = f.Data[:f.DataLength]
-	}
-
-	if _, err = io.ReadFull(r, f.Data); err != nil {
-		return err
+	f.Data = make([]byte, f.DataLength)
+	if _, err = io.ReadFull(br, f.Data); err != nil {
+		return
 	}
 
 	return

@@ -5,7 +5,10 @@ import (
 	"encoding/binary"
 )
 
-func (f *Frame) Write(bw *bufio.Writer) (err error) {
+func Write(bw *bufio.Writer, f *Frame) (err error) {
+	if f == nil {
+		return ErrFrameNil
+	}
 
 	// write fixed header
 	if _, err = bw.Write(f.FixedHeader[:]); err != nil {

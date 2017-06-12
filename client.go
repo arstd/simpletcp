@@ -2,15 +2,11 @@ package simpletcp
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"net"
-	"sync"
 )
 
 type Client struct {
-	sync.Mutex
-
 	Host string
 	Port int
 
@@ -82,50 +78,38 @@ func (s *Client) Send(data []byte) ([]byte, error) {
 		Data: data,
 	}
 
-	var received Frame
+	var received *Frame
 	var err error
-	if err = s.SendFrame(f, &received); err != nil {
+	if received, err = s.SendFrame(f); err != nil {
 		return nil, err
 	}
 
 	return received.Data, nil
 }
 
-var ErrFrameNil = errors.New("frame is nil")
-
-func (s *Client) SendFrame(f *Frame, received *Frame) (err error) {
-	if f == nil || received == nil {
-		return ErrFrameNil
+func (s *Client) SendFrame(f *Frame) (received *Frame, err error) {
+	if f == nil {
+		return nil, ErrFrameNil
 	}
 
 	s.check()
 
-	s.Lock()
-	defer s.Unlock()
-
 	if err = s.connect(); err != nil {
-		return err
+		return
 	}
 
 	if f.MessageId == 0 {
 		f.MessageId = s.NextMessageId()
 	}
-
-	if err = f.Write(s.bw); err != nil {
-		return err
+	if f.DataLength > s.MaxLength {
+		return nil, ErrDataLengthExceed
 	}
 
-	if received.FixedHeader == zero {
-		received.FixedHeader = s.FixedHeader
-	}
-	if received.MaxLength == 0 {
-		received.MaxLength = s.MaxLength
-	}
-	if err = received.Read(s.br); err != nil {
-		return err
+	if err = Write(s.bw, f); err != nil {
+		return
 	}
 
-	return nil
+	return Read(s.br, s.FixedHeader, s.MaxLength)
 }
 
 func (s *Client) Close() {

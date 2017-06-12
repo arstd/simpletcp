@@ -2,20 +2,16 @@ package main
 
 import (
 	"bytes"
-	"log"
 	"net/http"
 	_ "net/http/pprof"
 
+	"github.com/arstd/log"
 	"github.com/arstd/simpletcp"
 )
 
-func process(f *simpletcp.Frame) error {
-	// log.Printf("read: %+v", f)
-
-	f.Data = bytes.ToUpper(f.Data)
-
-	// log.Printf("write: %+v", f)
-	return nil
+func handle(data []byte) ([]byte, error) {
+	log.Info(data)
+	return bytes.ToUpper(data), nil
 }
 
 func main() {
@@ -30,9 +26,10 @@ func main() {
 		// DataType: simpletcp.DataTypeJSON,
 		// MaxLength: simpletcp.MaxLength,
 
-		HandleFunc: process,
+		Handle: handle,
+		// HandleFrame: handleFrame,
 	}
 
-	log.Printf("server is running at %s:%d", server.Host, server.Port)
+	log.Infof("server is running at %s:%d", server.Host, server.Port)
 	log.Fatal(server.Start())
 }

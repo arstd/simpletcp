@@ -1,5 +1,7 @@
 package simpletcp
 
+import "errors"
+
 var FixedHeader = [...]byte{'A', 'c'}
 
 const Version1 byte = 0x01
@@ -30,3 +32,8 @@ type Frame struct {
 	Header
 	Data []byte
 }
+
+var (
+	ErrFrameNil         = errors.New("frame is nil")
+	ErrDataLengthExceed = errors.New("data length exceed")
+)
