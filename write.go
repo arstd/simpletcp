@@ -30,9 +30,7 @@ func (f *Frame) Write(w io.Writer) (err error) {
 	}
 
 	// write data length
-	if f.DataLength == 0 {
-		f.DataLength = uint32(len(f.Data))
-	}
+	f.DataLength = uint32(len(f.Data)) // use real data length
 	if err = binary.Write(bw, binary.BigEndian, f.DataLength); err != nil {
 		return
 	}
