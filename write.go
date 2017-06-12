@@ -3,11 +3,9 @@ package simpletcp
 import (
 	"bufio"
 	"encoding/binary"
-	"io"
 )
 
-func (f *Frame) Write(w io.Writer) (err error) {
-	bw := bufio.NewWriter(w)
+func (f *Frame) Write(bw *bufio.Writer) (err error) {
 
 	// write fixed header
 	if _, err = bw.Write(f.FixedHeader[:]); err != nil {

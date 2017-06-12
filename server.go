@@ -1,6 +1,7 @@
 package simpletcp
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -67,6 +68,8 @@ func (s *Server) process(conn net.Conn) {
 	log.Printf("connection from %s", conn.RemoteAddr())
 
 	defer conn.Close()
+	bw := bufio.NewWriter(conn)
+	br := bufio.NewReader(conn)
 
 	// go s.keepalive()
 
@@ -83,7 +86,7 @@ func (s *Server) process(conn net.Conn) {
 	var err error
 	for {
 		frame.Data = buf
-		err = frame.Read(conn)
+		err = frame.Read(br)
 		if err != nil {
 			if err != io.EOF {
 				log.Print(err)
@@ -96,7 +99,7 @@ func (s *Server) process(conn net.Conn) {
 			return
 		}
 
-		if err = frame.Write(conn); err != nil {
+		if err = frame.Write(bw); err != nil {
 			if err != io.EOF {
 				log.Print(err)
 			}

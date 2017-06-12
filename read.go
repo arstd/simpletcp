@@ -7,9 +7,7 @@ import (
 	"io"
 )
 
-func (f *Frame) Read(r io.Reader) (err error) {
-	br := bufio.NewReader(r)
-
+func (f *Frame) Read(br *bufio.Reader) (err error) {
 	// read fixed header
 	if err = expectByte(br, "fixed header[0]", f.FixedHeader[0]); err != nil {
 		return

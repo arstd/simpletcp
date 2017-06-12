@@ -1,6 +1,7 @@
 package simpletcp
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"net"
@@ -18,7 +19,10 @@ type Client struct {
 	DataType    byte    // default 1 (0x01, json)
 	MaxLength   uint32  // default 655356 (1<<16)
 
-	conn      net.Conn
+	conn net.Conn
+	br   *bufio.Reader
+	bw   *bufio.Writer
+
 	messageId uint32
 }
 
@@ -34,7 +38,14 @@ func (s *Client) connect() error {
 
 	var err error
 	s.conn, err = net.Dial("tcp", fmt.Sprintf("%s:%d", s.Host, s.Port))
-	return err
+	if err != nil {
+		return err
+	}
+
+	s.br = bufio.NewReader(s.conn)
+	s.bw = bufio.NewWriter(s.conn)
+
+	return nil
 }
 
 var zero [2]byte
@@ -100,7 +111,7 @@ func (s *Client) SendFrame(f *Frame, received *Frame) (err error) {
 		f.MessageId = s.NextMessageId()
 	}
 
-	if err = f.Write(s.conn); err != nil {
+	if err = f.Write(s.bw); err != nil {
 		return err
 	}
 
@@ -110,7 +121,7 @@ func (s *Client) SendFrame(f *Frame, received *Frame) (err error) {
 	if received.MaxLength == 0 {
 		received.MaxLength = s.MaxLength
 	}
-	if err = received.Read(s.conn); err != nil {
+	if err = received.Read(s.br); err != nil {
 		return err
 	}
 
