@@ -1,6 +1,7 @@
 package simpletcp
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -19,6 +20,11 @@ type Client struct {
 
 	conn      net.Conn
 	messageId uint32
+}
+
+func (s *Client) NextMessageId() uint32 {
+	s.messageId++
+	return s.messageId
 }
 
 func (s *Client) connect() error {
@@ -55,13 +61,11 @@ func (s *Client) check() {
 func (s *Client) Send(data []byte) ([]byte, error) {
 	s.check()
 
-	s.messageId++
 	f := &Frame{
 		Header: Header{
 			FixedHeader: s.FixedHeader,
 			Version:     s.Version,
 			DataType:    s.DataType,
-			MessageId:   s.messageId,
 			MaxLength:   s.MaxLength,
 		},
 		Data: data,
@@ -76,13 +80,25 @@ func (s *Client) Send(data []byte) ([]byte, error) {
 	return received.Data, nil
 }
 
+var ErrFrameNil = errors.New("frame is nil")
+
 func (s *Client) SendFrame(f *Frame, received *Frame) (err error) {
+	if f == nil || received == nil {
+		return ErrFrameNil
+	}
+
 	s.check()
 
 	s.Lock()
 	defer s.Unlock()
 
-	s.connect()
+	if err = s.connect(); err != nil {
+		return err
+	}
+
+	if f.MessageId == 0 {
+		f.MessageId = s.NextMessageId()
+	}
 
 	if err = f.Write(s.conn); err != nil {
 		return err

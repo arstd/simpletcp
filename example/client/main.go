@@ -11,9 +11,9 @@ import (
 
 func main() {
 
-	useBytes(time.Second)
+	useBytes(1 * time.Millisecond)
 
-	useFrame(time.Second)
+	useFrame(1 * time.Millisecond)
 }
 
 func useBytes(period time.Duration) {
@@ -60,18 +60,21 @@ func useFrame(period time.Duration) {
 		count = 0
 	}()
 
-	var frame, received simpletcp.Frame
-	frame = simpletcp.Frame{
+	frame := simpletcp.Frame{
 		Header: simpletcp.Header{
 			FixedHeader: simpletcp.FixedHeader,
 			Version:     simpletcp.Version1,
 			DataType:    simpletcp.DataTypePlain,
 		},
 	}
-	received = frame
-	buf := make([]byte, simpletcp.MaxLength)
+	received := frame // struct copy
 
+	buf := make([]byte, simpletcp.MaxLength)
 	for i := 0; i < count; i++ {
+		// frame.MessageId = client.NextMessageId()
+		// frame.MessageId = uint32(i + 1)
+		frame.MessageId = 0 // 如果未设置， client 会分配 MessageId
+
 		frame.Data = random.Bytes(3)
 		received.Data = buf // 不会重新分配内存
 

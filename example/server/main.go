@@ -3,11 +3,10 @@ package main
 import (
 	"bytes"
 	"log"
-
-	"github.com/arstd/simpletcp"
-
 	"net/http"
 	_ "net/http/pprof"
+
+	"github.com/arstd/simpletcp"
 )
 
 func process(f *simpletcp.Frame) error {
