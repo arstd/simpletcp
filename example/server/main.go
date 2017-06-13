@@ -9,18 +9,18 @@ import (
 	"github.com/arstd/simpletcp"
 )
 
-func handle(data []byte) ([]byte, error) {
+func handle(data []byte) []byte {
 	log.Info(data)
-	return bytes.ToUpper(data), nil
+	return bytes.ToUpper(data)
 }
 
 var scount int
 
-func handleFrame(frame *simpletcp.Frame) (*simpletcp.Frame, error) {
+func handleFrame(frame *simpletcp.Frame) *simpletcp.Frame {
 	scount++
 	log.Infof("%d: %d %d %s", scount, frame.MessageId, frame.DataLength, frame.Data)
 	frame.Data = bytes.ToUpper(frame.Data)
-	return frame, nil
+	return frame
 }
 
 func main() {

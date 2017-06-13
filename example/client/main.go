@@ -12,7 +12,7 @@ import (
 	"github.com/arstd/simpletcp/example/random"
 )
 
-const randLength = 20000
+const randLength = 2048
 
 func main() {
 

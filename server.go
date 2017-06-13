@@ -23,8 +23,8 @@ type Server struct {
 	DataType    byte    // default 1 (0x01, json)
 	MaxLength   uint32  // default 655356 (1<<16)
 
-	Handle      func([]byte) ([]byte, error) // one of handlers must not nil
-	HandleFrame func(*Frame) (*Frame, error)
+	Handle      func([]byte) []byte // one of handlers must not nil
+	HandleFrame func(*Frame) *Frame
 }
 
 func (s *Server) init() error {
@@ -118,13 +118,10 @@ func (s *Server) readLoop(inQueue chan<- *Frame, conn *net.TCPConn) error {
 }
 
 func (s *Server) processLoopFrame(outQueue chan<- *Frame, inQueue <-chan *Frame) (err error) {
-	var frame, received *Frame
+	var frame *Frame
 	for {
 		frame = <-inQueue
-		if received, err = s.HandleFrame(frame); err != nil {
-			log.Error(err)
-		}
-		outQueue <- received
+		outQueue <- s.HandleFrame(frame)
 	}
 }
 
@@ -132,9 +129,7 @@ func (s *Server) processLoop(outQueue chan<- *Frame, inQueue <-chan *Frame) (err
 	var frame *Frame
 	for {
 		frame = <-inQueue
-		if frame.Data, err = s.Handle(frame.Data); err != nil {
-			log.Error(err)
-		}
+		frame.Data = s.Handle(frame.Data)
 		outQueue <- frame
 	}
 }
