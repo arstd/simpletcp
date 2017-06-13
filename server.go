@@ -10,6 +10,7 @@ import (
 )
 
 const BufferSize = 4096
+const Processors = 10
 
 type Server struct {
 	Host string
@@ -22,7 +23,7 @@ type Server struct {
 	DataType    byte    // default 1 (0x01, json)
 	MaxLength   uint32  // default 655356 (1<<16)
 
-	Handle      func([]byte) ([]byte, error)
+	Handle      func([]byte) ([]byte, error) // one of handlers must not nil
 	HandleFrame func(*Frame) (*Frame, error)
 }
 
@@ -94,7 +95,13 @@ func (s *Server) process(conn *net.TCPConn) {
 
 	go s.readLoop(inQueue, conn)
 
-	go s.processLoop(outQueue, inQueue)
+	for i := 0; i < Processors; i++ {
+		if s.HandleFrame != nil {
+			go s.processLoopFrame(outQueue, inQueue)
+		} else {
+			go s.processLoop(outQueue, inQueue)
+		}
+	}
 
 	go s.writeLoop(outQueue, conn)
 }
@@ -110,20 +117,21 @@ func (s *Server) readLoop(inQueue chan<- *Frame, conn *net.TCPConn) error {
 	}
 }
 
-func (s *Server) processLoop(outQueue chan<- *Frame, inQueue <-chan *Frame) (err error) {
-	if s.HandleFrame != nil {
-		var frame, received *Frame
-		for {
-			frame = <-inQueue
-			if received, err = s.HandleFrame(frame); err != nil {
-				log.Error(err)
-			}
-			outQueue <- received
-		}
-	}
-
+func (s *Server) processLoopFrame(outQueue chan<- *Frame, inQueue <-chan *Frame) (err error) {
+	var frame, received *Frame
 	for {
-		frame := <-inQueue
+		frame = <-inQueue
+		if received, err = s.HandleFrame(frame); err != nil {
+			log.Error(err)
+		}
+		outQueue <- received
+	}
+}
+
+func (s *Server) processLoop(outQueue chan<- *Frame, inQueue <-chan *Frame) (err error) {
+	var frame *Frame
+	for {
+		frame = <-inQueue
 		if frame.Data, err = s.Handle(frame.Data); err != nil {
 			log.Error(err)
 		}

@@ -14,6 +14,15 @@ func handle(data []byte) ([]byte, error) {
 	return bytes.ToUpper(data), nil
 }
 
+var scount int
+
+func handleFrame(frame *simpletcp.Frame) (*simpletcp.Frame, error) {
+	scount++
+	log.Infof("%d: %d %d %s", scount, frame.MessageId, frame.DataLength, frame.Data)
+	frame.Data = bytes.ToUpper(frame.Data)
+	return frame, nil
+}
+
 func main() {
 	go http.ListenAndServe("0.0.0.0:6060", nil)
 
@@ -26,8 +35,8 @@ func main() {
 		// DataType: simpletcp.DataTypeJSON,
 		// MaxLength: simpletcp.MaxLength,
 
-		Handle: handle,
-		// HandleFrame: handleFrame,
+		// Handle: handle,
+		HandleFrame: handleFrame,
 	}
 
 	log.Infof("server is running at %s:%d", server.Host, server.Port)
