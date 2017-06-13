@@ -1,6 +1,6 @@
-hash: 182d9c386270f666e07405ab90e9eaeca0c874d750bbf90416f68a45e16355d8
-updated: 2017-06-12T18:41:14.876958043+08:00
+hash: fd2aa3f1c8e73b3e6b18af609c07bce4f8a52ed5f62a1f7350d62c45d36e1554
+updated: 2017-06-13T12:13:14.888920663+08:00
 imports:
 - name: github.com/arstd/log
-  version: 3b70b5527d8a0128e731b98333d42beb754e39c5
+  version: d2d4b219246a6c72e73eb3c5efca890e2ca4bccb
 testImports: []
