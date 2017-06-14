@@ -17,6 +17,7 @@ type Server struct {
 	Port int
 
 	BufferSize int // read and write buffer size of one connection
+	Processors int // goroutine number of one connection
 
 	FixedHeader [2]byte // default 'Ac' (0x41 0x63)
 	Version     byte    // default 1 (0x01)
@@ -45,6 +46,9 @@ func (s *Server) init() error {
 	}
 	if s.BufferSize == 0 {
 		s.BufferSize = BufferSize
+	}
+	if s.Processors == 0 {
+		s.Processors = Processors
 	}
 
 	if s.Handle == nil && s.HandleFrame == nil {
@@ -87,7 +91,6 @@ func (s *Server) accept(l *net.TCPListener) error {
 
 func (s *Server) process(conn *net.TCPConn) {
 	log.Infof("connection from %s", conn.RemoteAddr())
-	// go s.keepalive(conn)
 	// defer conn.Close()
 
 	inQueue := make(chan *Frame, s.BufferSize)

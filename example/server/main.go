@@ -24,6 +24,8 @@ func handleFrame(frame *simpletcp.Frame) *simpletcp.Frame {
 }
 
 func main() {
+	log.SetLevel(log.Lwarn)
+
 	go http.ListenAndServe("0.0.0.0:6060", nil)
 
 	server := &simpletcp.Server{
@@ -39,6 +41,6 @@ func main() {
 		HandleFrame: handleFrame,
 	}
 
-	log.Infof("server is running at %s:%d", server.Host, server.Port)
+	log.Printf("server is running at %s:%d", server.Host, server.Port)
 	log.Fatal(server.Start())
 }
