@@ -9,8 +9,8 @@ import (
 	"github.com/arstd/log"
 )
 
-const BufferSize = 4096
-const Processors = 10
+const BufferSize = 20480
+const Processors = 32
 
 type Server struct {
 	Host string
@@ -92,6 +92,8 @@ func (s *Server) accept(l *net.TCPListener) error {
 func (s *Server) process(conn *net.TCPConn) {
 	log.Infof("connection from %s", conn.RemoteAddr())
 	// defer conn.Close()
+
+	conn.SetNoDelay(true)
 
 	inQueue := make(chan *Frame, s.BufferSize)
 	outQueue := make(chan *Frame, s.BufferSize)

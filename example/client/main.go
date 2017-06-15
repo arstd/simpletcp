@@ -20,7 +20,7 @@ func main() {
 	//
 	// useFrame(1 * time.Millisecond)
 
-	asyncFrame(10000 * time.Millisecond)
+	asyncFrame(15000 * time.Millisecond)
 }
 
 func useBytes(period time.Duration) {
@@ -139,7 +139,7 @@ func asyncFrame(period time.Duration) {
 			if err = simpletcp.Write(bw, &frame); err != nil {
 				log.Error(err)
 			}
-			time.Sleep(1 * time.Microsecond)
+			time.Sleep(8 * time.Microsecond)
 			// log.Infof("%d: %d %d %s", scount, frame.MessageId, frame.DataLength, frame.Data)
 		}
 	}()
@@ -162,6 +162,9 @@ func asyncFrame(period time.Duration) {
 		delta := int64(uint32(time.Now().UnixNano()/1000) - reserved)
 		// log.Info(delta, reserved)
 		total += delta
+		if rcount%10000 == 0 {
+			log.Debug(delta)
+		}
 
 		if stop && rcount == scount {
 			break
