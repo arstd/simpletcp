@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 
 	"github.com/arstd/log"
 )
@@ -20,10 +21,11 @@ type Server struct {
 	BufferSize int // read and write buffer size of one connection
 	Processors int // goroutine number of one connection
 
-	FixedHeader [2]byte // default 'Ac' (0x41 0x63)
-	Version     byte    // default 1 (0x01)
-	DataType    byte    // default 1 (0x01, json)
-	MaxLength   uint32  // default 655356 (1<<16)
+	Fixed     [2]byte // default 'Ac' (0x41 0x63)
+	MaxLength uint32  // default 65536 (1<<16)
+
+	Version  byte // default 1 (0x01)
+	DataType byte // default 1 (0x01, json)
 
 	Handle      func([]byte) []byte // one of handlers must not nil
 	HandleFrame func(*Frame) *Frame
@@ -33,8 +35,8 @@ func (s *Server) init() error {
 	if s.Host == "" {
 		s.Host = "0.0.0.0"
 	}
-	if s.FixedHeader == [2]byte{} {
-		s.FixedHeader = FixedHeader
+	if s.Fixed == [2]byte{} {
+		s.Fixed = Fixed
 	}
 	if s.Version == 0 {
 		s.Version = Version1
@@ -96,6 +98,9 @@ func (s *Server) process(conn *net.TCPConn) {
 
 	conn.SetNoDelay(true)
 
+	conn.SetKeepAlive(true)
+	conn.SetKeepAlivePeriod(10 * time.Second)
+
 	inQueue := make(chan *Frame, s.BufferSize)
 	outQueue := make(chan *Frame, s.BufferSize)
 
@@ -113,9 +118,10 @@ func (s *Server) process(conn *net.TCPConn) {
 }
 
 func (s *Server) readLoop(inQueue chan<- *Frame, conn *net.TCPConn) error {
+	conn.SetReadBuffer(20480)
 	br := bufio.NewReaderSize(conn, 20480)
 	for {
-		if frame, err := Read(br, s.FixedHeader, s.MaxLength); err != nil {
+		if frame, err := Read(br, s.Fixed, s.MaxLength); err != nil {
 			if err == io.EOF {
 				conn.Close()
 			} else {
@@ -139,7 +145,11 @@ func (s *Server) processLoopFrame(outQueue chan<- *Frame, inQueue <-chan *Frame)
 	var frame *Frame
 	for {
 		frame = <-inQueue
-		outQueue <- s.HandleFrame(frame)
+		if frame.Version == VersionPing {
+			outQueue <- frame
+		} else {
+			outQueue <- s.HandleFrame(frame)
+		}
 	}
 }
 
@@ -153,16 +163,21 @@ func (s *Server) processLoop(outQueue chan<- *Frame, inQueue <-chan *Frame) (err
 	var frame *Frame
 	for {
 		frame = <-inQueue
-		frame.Data = s.Handle(frame.Data)
-		outQueue <- frame
+		if frame.Version == VersionPing {
+			outQueue <- frame
+		} else {
+			frame.Data = s.Handle(frame.Data)
+			outQueue <- frame
+		}
 	}
 }
 
 func (s *Server) writeLoop(outQueue <-chan *Frame, conn *net.TCPConn) (err error) {
+	conn.SetWriteBuffer(20480)
 	bw := bufio.NewWriterSize(conn, 20480)
 	for {
 		frame := <-outQueue
-		if err = Write(bw, frame); err != nil {
+		if err = Write(bw, s.Fixed, frame); err != nil {
 			if err == io.EOF {
 				conn.Close()
 			} else {

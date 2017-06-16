@@ -10,21 +10,22 @@ type Client struct {
 	Host string
 	Port int
 
-	FixedHeader [2]byte // default 'Ac' (0x41 0x63)
-	Version     byte    // default 1 (0x01)
-	DataType    byte    // default 1 (0x01, json)
-	MaxLength   uint32  // default 655356 (1<<16)
+	Fixed     [2]byte // default 'Ac' (0x41 0x63)
+	MaxLength uint32  // default 655356 (1<<16)
+
+	Version  byte // default 1 (0x01)
+	DataType byte // default 1 (0x01, json)
 
 	conn net.Conn
 	br   *bufio.Reader
 	bw   *bufio.Writer
 
-	messageId uint32
+	nextId uint32
 }
 
-func (s *Client) NextMessageId() uint32 {
-	s.messageId++
-	return s.messageId
+func (s *Client) NextId() uint32 {
+	s.nextId++
+	return s.nextId
 }
 
 func (s *Client) connect() error {
@@ -47,12 +48,12 @@ func (s *Client) connect() error {
 var zero [2]byte
 
 func (s *Client) check() {
-	if s.FixedHeader != zero {
+	if s.Fixed != zero {
 		return
 	}
 
-	if s.FixedHeader == [2]byte{} {
-		s.FixedHeader = FixedHeader
+	if s.Fixed == [2]byte{} {
+		s.Fixed = Fixed
 	}
 	if s.Version == 0 {
 		s.Version = Version1
@@ -70,11 +71,9 @@ func (s *Client) Send(data []byte) ([]byte, error) {
 
 	f := &Frame{
 		Header: Header{
-			FixedHeader: s.FixedHeader,
-			Version:     s.Version,
-			DataType:    s.DataType,
-			MaxLength:   s.MaxLength,
-			MessageId:   s.NextMessageId(),
+			Version:   s.Version,
+			DataType:  s.DataType,
+			MessageId: s.NextId(),
 		},
 		Data: data,
 	}
@@ -103,11 +102,11 @@ func (s *Client) SendFrame(f *Frame) (received *Frame, err error) {
 		return nil, ErrDataLengthExceed
 	}
 
-	if err = Write(s.bw, f); err != nil {
+	if err = Write(s.bw, s.Fixed, f); err != nil {
 		return
 	}
 
-	return Read(s.br, s.FixedHeader, s.MaxLength)
+	return Read(s.br, s.Fixed, s.MaxLength)
 }
 
 func (s *Client) Close() {

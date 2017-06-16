@@ -2,9 +2,12 @@ package simpletcp
 
 import "errors"
 
-var FixedHeader = [...]byte{'A', 'c'}
+var Fixed = [2]byte{'A', 'c'}
 
-const Version1 byte = 0x01
+const (
+	VersionPing byte = 0x00
+	Version1    byte = 0x01
+)
 
 const (
 	DataTypeJSON     byte = 0x01
@@ -18,14 +21,12 @@ const MaxLength uint32 = 1 << 16
 var Reserved [4]byte
 
 type Header struct {
-	FixedHeader [2]byte
-	Version     byte
-	DataType    byte
+	// FixedHeader [2]byte
+	Version  byte
+	DataType byte
 
-	MessageId uint32
-
+	MessageId  uint32
 	DataLength uint32
-	MaxLength  uint32
 
 	Reserved [4]byte
 }

@@ -33,13 +33,14 @@ func main() {
 		Host: "0.0.0.0",
 		Port: 8623,
 
-		BufferSize: 4096,
-		Processors: 2,
+		BufferSize: 20480,
+		Processors: 32,
 
 		// FixedHeader : simpletcp.FixedHeader,
+		// MaxLength: simpletcp.MaxLength,
+
 		// Version   : simpletcp.Version1,
 		// DataType: simpletcp.DataTypeJSON,
-		// MaxLength: simpletcp.MaxLength,
 
 		// Handle: handle,
 		HandleFrame: handleFrame,

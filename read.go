@@ -7,19 +7,14 @@ import (
 	"io"
 )
 
-func Read(br *bufio.Reader, fixedHeader [2]byte, maxLength uint32) (f *Frame, err error) {
-	f = &Frame{
-		Header: Header{
-			FixedHeader: fixedHeader,
-			MaxLength:   maxLength,
-		},
-	}
+func Read(br *bufio.Reader, fixed [2]byte, maxLength uint32) (f *Frame, err error) {
+	f = &Frame{}
 
 	// read fixed header
-	if err = expectByte(br, "fixed header[0]", f.FixedHeader[0]); err != nil {
+	if err = expectByte(br, "fixed[0]", fixed[0]); err != nil {
 		return
 	}
-	if err = expectByte(br, "fixed header[1]", f.FixedHeader[1]); err != nil {
+	if err = expectByte(br, "fixed[1]", fixed[1]); err != nil {
 		return
 	}
 
@@ -41,8 +36,8 @@ func Read(br *bufio.Reader, fixedHeader [2]byte, maxLength uint32) (f *Frame, er
 	// read data length
 	if f.DataLength, err = readUint32(br); err != nil {
 		return
-	} else if f.DataLength > f.MaxLength {
-		err = fmt.Errorf("data length exceed, max %d, but got %d", f.MaxLength, f.DataLength)
+	} else if f.DataLength > maxLength {
+		err = fmt.Errorf("data length exceed, max %d, but got %d", maxLength, f.DataLength)
 		return
 	}
 

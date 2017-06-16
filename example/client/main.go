@@ -15,8 +15,8 @@ const randLength = 2048
 
 func main() {
 	// useBytes(30000 * time.Millisecond)
-	// useFrame(30000 * time.Millisecond)
-	asyncFrame(60000 * time.Millisecond)
+	// useFrame(1000 * time.Millisecond)
+	asyncFrame(10000 * time.Millisecond)
 }
 
 func useBytes(period time.Duration) {
@@ -24,10 +24,11 @@ func useBytes(period time.Duration) {
 		Host: "0.0.0.0",
 		Port: 8623,
 
-		FixedHeader: simpletcp.FixedHeader,
-		Version:     simpletcp.Version1,
-		DataType:    simpletcp.DataTypeJSON,
-		MaxLength:   simpletcp.MaxLength,
+		Fixed:     simpletcp.Fixed,
+		MaxLength: simpletcp.MaxLength,
+
+		Version:  simpletcp.Version1,
+		DataType: simpletcp.DataTypeJSON,
 	}
 	defer client.Close()
 
@@ -68,15 +69,14 @@ func useFrame(period time.Duration) {
 
 	frame := simpletcp.Frame{
 		Header: simpletcp.Header{
-			FixedHeader: simpletcp.FixedHeader,
-			Version:     simpletcp.Version1,
-			DataType:    simpletcp.DataTypeJSON,
+			Version:  simpletcp.Version1,
+			DataType: simpletcp.DataTypeJSON,
 		},
 	}
 
 	for !stop {
 		count++
-		frame.MessageId = client.NextMessageId()
+		frame.MessageId = client.NextId()
 		// frame.MessageId = uint32(i + 1)
 
 		frame.Data = random.Bytes(rand.Intn(randLength))
@@ -103,6 +103,14 @@ func asyncFrame(period time.Duration) {
 	}
 	defer tcpConn.Close()
 
+	tcpConn.SetNoDelay(true)
+
+	// tcpConn.SetKeepAlive(true)
+	// tcpConn.SetKeepAlivePeriod(time.Second)
+
+	// tcpConn.SetReadBuffer(20480)
+	// tcpConn.SetWriteBuffer(20480)
+
 	var stop bool
 	var scount, rcount uint32
 
@@ -113,9 +121,8 @@ func asyncFrame(period time.Duration) {
 
 	frame := simpletcp.Frame{
 		Header: simpletcp.Header{
-			FixedHeader: simpletcp.FixedHeader,
-			Version:     simpletcp.Version1,
-			DataType:    simpletcp.DataTypeJSON,
+			Version:  simpletcp.Version1,
+			DataType: simpletcp.DataTypeJSON,
 		},
 	}
 
@@ -128,6 +135,12 @@ func asyncFrame(period time.Duration) {
 			scount++
 			frame.MessageId = scount
 			frame.Data = random.Bytes(1024)
+			frame.Version = simpletcp.Version1
+
+			if scount%30000 == 0 {
+				frame.Version = simpletcp.VersionPing
+				frame.Data = nil
+			}
 
 			reserved := uint32(time.Now().UnixNano() / 1000)
 			frame.Reserved = [4]byte{
@@ -137,7 +150,7 @@ func asyncFrame(period time.Duration) {
 				byte(reserved),
 			}
 
-			if err = simpletcp.Write(bw, &frame); err != nil {
+			if err = simpletcp.Write(bw, simpletcp.Fixed, &frame); err != nil {
 				log.Error(err)
 			}
 			time.Sleep(1 * time.Nanosecond)
@@ -148,12 +161,14 @@ func asyncFrame(period time.Duration) {
 	var total int64
 	br := bufio.NewReader(tcpConn)
 	for {
-		received, err := simpletcp.Read(br, simpletcp.FixedHeader, simpletcp.MaxLength)
+		received, err := simpletcp.Read(br, simpletcp.Fixed, simpletcp.MaxLength)
 		if err != nil {
 			log.Fatal(err)
 		}
 		rcount++
-		// log.Debugf("%d: %d %d %s", rcount, received.MessageId, received.DataLength, received.Data)
+		if received.Version == simpletcp.VersionPing {
+			log.Debugf("%d: %d %d %s", rcount, received.MessageId, received.DataLength, received.Data)
+		}
 
 		reserved := uint32(received.Reserved[0])<<24 +
 			uint32(received.Reserved[1])<<16 +
