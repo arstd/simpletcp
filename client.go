@@ -74,6 +74,7 @@ func (s *Client) Send(data []byte) ([]byte, error) {
 			Version:     s.Version,
 			DataType:    s.DataType,
 			MaxLength:   s.MaxLength,
+			MessageId:   s.NextMessageId(),
 		},
 		Data: data,
 	}
@@ -98,9 +99,6 @@ func (s *Client) SendFrame(f *Frame) (received *Frame, err error) {
 		return
 	}
 
-	if f.MessageId == 0 {
-		f.MessageId = s.NextMessageId()
-	}
 	if f.DataLength > s.MaxLength {
 		return nil, ErrDataLengthExceed
 	}

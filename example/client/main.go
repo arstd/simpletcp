@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"math"
 	"math/rand"
 	"net"
 	"time"
@@ -15,12 +14,9 @@ import (
 const randLength = 2048
 
 func main() {
-
-	// useBytes(1 * time.Millisecond)
-	//
-	// useFrame(1 * time.Millisecond)
-
-	asyncFrame(15000 * time.Millisecond)
+	// useBytes(30000 * time.Millisecond)
+	// useFrame(30000 * time.Millisecond)
+	asyncFrame(60000 * time.Millisecond)
 }
 
 func useBytes(period time.Duration) {
@@ -35,22 +31,24 @@ func useBytes(period time.Duration) {
 	}
 	defer client.Close()
 
-	var count = math.MaxUint32
+	var stop bool
+	var count time.Duration
 
 	go func() {
 		<-time.After(period)
-		count = 0
+		stop = true
 	}()
 
-	for i := 0; i < count; i++ {
+	for !stop {
+		count++
 		message := []byte(random.String(rand.Intn(randLength)))
-
-		received, err := client.Send(message)
+		_, err := client.Send(message)
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Printf("%s", received)
+		// log.Printf("%s", received)
 	}
+	log.Infof("%s %d => qps: %d, latency: %s", period, count, count*time.Second/period, period/count)
 }
 
 func useFrame(period time.Duration) {
@@ -60,11 +58,12 @@ func useFrame(period time.Duration) {
 	}
 	defer client.Close()
 
-	var count = math.MaxUint32
+	var stop bool
+	var count time.Duration
 
 	go func() {
 		<-time.After(period)
-		count = 0
+		stop = true
 	}()
 
 	frame := simpletcp.Frame{
@@ -75,19 +74,21 @@ func useFrame(period time.Duration) {
 		},
 	}
 
-	for i := 0; i < count; i++ {
-		// frame.MessageId = client.NextMessageId()
+	for !stop {
+		count++
+		frame.MessageId = client.NextMessageId()
 		// frame.MessageId = uint32(i + 1)
-		frame.MessageId = 0 // 如果未设置， client 会分配 MessageId
 
 		frame.Data = random.Bytes(rand.Intn(randLength))
 
-		received, err := client.SendFrame(&frame)
+		_, err := client.SendFrame(&frame)
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Debugf("%d %d %s", received.MessageId, received.DataLength, received.Data)
+		// log.Debugf("%d %d %s", received.MessageId, received.DataLength, received.Data)
+		// log.Debugf("%#v", received)
 	}
+	log.Infof("%s %d => qps: %d, latency: %s", period, count, count*time.Second/period, period/count)
 }
 
 func asyncFrame(period time.Duration) {
@@ -139,7 +140,7 @@ func asyncFrame(period time.Duration) {
 			if err = simpletcp.Write(bw, &frame); err != nil {
 				log.Error(err)
 			}
-			time.Sleep(8 * time.Microsecond)
+			time.Sleep(1 * time.Nanosecond)
 			// log.Infof("%d: %d %d %s", scount, frame.MessageId, frame.DataLength, frame.Data)
 		}
 	}()
@@ -162,7 +163,7 @@ func asyncFrame(period time.Duration) {
 		delta := int64(uint32(time.Now().UnixNano()/1000) - reserved)
 		// log.Info(delta, reserved)
 		total += delta
-		if rcount%10000 == 0 {
+		if rcount%30000 == 0 {
 			log.Debug(delta)
 		}
 

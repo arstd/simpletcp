@@ -32,8 +32,15 @@ func Write(bw *bufio.Writer, f *Frame) (err error) {
 
 	// write data length
 	f.DataLength = uint32(len(f.Data)) // use real data length
-	if err = binary.Write(bw, binary.BigEndian, f.DataLength); err != nil {
-		return
+	if f.DataLength == 0 {
+		// write data type
+		if _, err = bw.Write(Reserved[:]); err != nil {
+			return
+		}
+	} else {
+		if err = binary.Write(bw, binary.BigEndian, f.DataLength); err != nil {
+			return
+		}
 	}
 
 	// write data type
@@ -42,8 +49,10 @@ func Write(bw *bufio.Writer, f *Frame) (err error) {
 	}
 
 	// write data
-	if _, err = bw.Write(f.Data); err != nil {
-		return
+	if f.DataLength > 0 {
+		if _, err = bw.Write(f.Data); err != nil {
+			return
+		}
 	}
 
 	return bw.Flush()

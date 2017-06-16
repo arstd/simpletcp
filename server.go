@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 
 	"github.com/arstd/log"
@@ -112,9 +113,15 @@ func (s *Server) process(conn *net.TCPConn) {
 }
 
 func (s *Server) readLoop(inQueue chan<- *Frame, conn *net.TCPConn) error {
-	br := bufio.NewReader(conn)
+	br := bufio.NewReaderSize(conn, 20480)
 	for {
 		if frame, err := Read(br, s.FixedHeader, s.MaxLength); err != nil {
+			if err == io.EOF {
+				conn.Close()
+			} else {
+				log.Error(err)
+				conn.CloseRead()
+			}
 			return err
 		} else {
 			inQueue <- frame
@@ -123,6 +130,12 @@ func (s *Server) readLoop(inQueue chan<- *Frame, conn *net.TCPConn) error {
 }
 
 func (s *Server) processLoopFrame(outQueue chan<- *Frame, inQueue <-chan *Frame) (err error) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Stack(err)
+			go s.processLoopFrame(outQueue, inQueue)
+		}
+	}()
 	var frame *Frame
 	for {
 		frame = <-inQueue
@@ -131,6 +144,12 @@ func (s *Server) processLoopFrame(outQueue chan<- *Frame, inQueue <-chan *Frame)
 }
 
 func (s *Server) processLoop(outQueue chan<- *Frame, inQueue <-chan *Frame) (err error) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Stack(err)
+			go s.processLoop(outQueue, inQueue)
+		}
+	}()
 	var frame *Frame
 	for {
 		frame = <-inQueue
@@ -140,13 +159,16 @@ func (s *Server) processLoop(outQueue chan<- *Frame, inQueue <-chan *Frame) (err
 }
 
 func (s *Server) writeLoop(outQueue <-chan *Frame, conn *net.TCPConn) (err error) {
-	bw := bufio.NewWriter(conn)
+	bw := bufio.NewWriterSize(conn, 20480)
 	for {
 		frame := <-outQueue
-		if frame.DataLength > s.MaxLength {
-			return ErrDataLengthExceed
-		}
 		if err = Write(bw, frame); err != nil {
+			if err == io.EOF {
+				conn.Close()
+			} else {
+				log.Error(err)
+				conn.CloseWrite()
+			}
 			return
 		}
 	}

@@ -19,7 +19,8 @@ var scount int
 func handleFrame(frame *simpletcp.Frame) *simpletcp.Frame {
 	scount++
 	log.Infof("%d: %d %d %s", scount, frame.MessageId, frame.DataLength, frame.Data)
-	frame.Data = bytes.ToUpper(frame.Data)
+	// frame.Data = bytes.ToUpper(frame.Data)
+	frame.Data = nil
 	return frame
 }
 
@@ -32,8 +33,8 @@ func main() {
 		Host: "0.0.0.0",
 		Port: 8623,
 
-		BufferSize: 20480,
-		Processors: 8,
+		BufferSize: 4096,
+		Processors: 2,
 
 		// FixedHeader : simpletcp.FixedHeader,
 		// Version   : simpletcp.Version1,
