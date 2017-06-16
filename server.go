@@ -118,8 +118,8 @@ func (s *Server) process(conn *net.TCPConn) {
 }
 
 func (s *Server) readLoop(inQueue chan<- *Frame, conn *net.TCPConn) error {
-	conn.SetReadBuffer(20480)
-	br := bufio.NewReaderSize(conn, 20480)
+	conn.SetReadBuffer(2048)
+	br := bufio.NewReaderSize(conn, 2048)
 	for {
 		if frame, err := Read(br, s.Fixed, s.MaxLength); err != nil {
 			if err == io.EOF {
@@ -173,8 +173,8 @@ func (s *Server) processLoop(outQueue chan<- *Frame, inQueue <-chan *Frame) (err
 }
 
 func (s *Server) writeLoop(outQueue <-chan *Frame, conn *net.TCPConn) (err error) {
-	conn.SetWriteBuffer(20480)
-	bw := bufio.NewWriterSize(conn, 20480)
+	conn.SetWriteBuffer(1024)
+	bw := bufio.NewWriterSize(conn, 1024)
 	for {
 		frame := <-outQueue
 		if err = Write(bw, s.Fixed, frame); err != nil {
