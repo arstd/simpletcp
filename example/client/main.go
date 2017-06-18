@@ -9,6 +9,7 @@ import (
 	"github.com/arstd/log"
 	"github.com/arstd/simpletcp"
 	"github.com/arstd/simpletcp/example/random"
+	"github.com/arstd/simpletcp/example/util"
 )
 
 const randLength = 2048
@@ -16,7 +17,7 @@ const randLength = 2048
 func main() {
 	// useBytes(30000 * time.Millisecond)
 	// useFrame(1000 * time.Millisecond)
-	asyncFrame(10000 * time.Millisecond)
+	asyncFrame(6e5)
 }
 
 func useBytes(period time.Duration) {
@@ -91,7 +92,7 @@ func useFrame(period time.Duration) {
 	log.Infof("%s %d => qps: %d, latency: %s", period, count, count*time.Second/period, period/count)
 }
 
-func asyncFrame(period time.Duration) {
+func asyncFrame(count uint32) {
 	raddr, err := net.ResolveTCPAddr("tcp", ":8623")
 	if err != nil {
 		log.Fatal(err)
@@ -111,14 +112,6 @@ func asyncFrame(period time.Duration) {
 	// tcpConn.SetReadBuffer(20480)
 	// tcpConn.SetWriteBuffer(20480)
 
-	var stop bool
-	var scount, rcount uint32
-
-	go func() {
-		<-time.After(period)
-		stop = true
-	}()
-
 	frame := simpletcp.Frame{
 		Header: simpletcp.Header{
 			Version:  simpletcp.Version1,
@@ -131,64 +124,53 @@ func asyncFrame(period time.Duration) {
 		bw := bufio.NewWriter(tcpConn)
 		start = time.Now()
 		log.Info("start send")
-		for !stop {
-			scount++
-			frame.MessageId = scount
+		for i := uint32(0); i < count; i++ {
+			frame.MessageId = i
 			frame.Data = random.Bytes(1024)
 			frame.Version = simpletcp.Version1
 
-			if scount%30000 == 0 {
+			if i%10000 == 0 {
 				frame.Version = simpletcp.VersionPing
 				frame.Data = nil
 			}
 
 			reserved := uint32(time.Now().UnixNano() / 1000)
-			frame.Reserved = [4]byte{
-				byte(reserved >> 24),
-				byte(reserved >> 16),
-				byte(reserved >> 8),
-				byte(reserved),
-			}
+			frame.Reserved = util.Bytes(reserved)
 
 			if err = simpletcp.Write(bw, simpletcp.Fixed, &frame); err != nil {
 				log.Error(err)
 			}
-			time.Sleep(1 * time.Nanosecond)
+			// time.Sleep(1 * time.Nanosecond)
 			// log.Infof("%d: %d %d %s", scount, frame.MessageId, frame.DataLength, frame.Data)
 		}
 	}()
 
 	var total int64
 	br := bufio.NewReader(tcpConn)
-	for {
+	for i := uint32(0); i < count; i++ {
 		received, err := simpletcp.Read(br, simpletcp.Fixed, simpletcp.MaxLength)
 		if err != nil {
 			log.Fatal(err)
 		}
-		rcount++
 		if received.Version == simpletcp.VersionPing {
-			log.Debugf("%d: %d %d %s", rcount, received.MessageId, received.DataLength, received.Data)
+			log.Debugf("%d: %d %d %s", i, received.MessageId, received.DataLength, received.Data)
 		}
 
-		reserved := uint32(received.Reserved[0])<<24 +
-			uint32(received.Reserved[1])<<16 +
-			uint32(received.Reserved[2])<<8 +
-			uint32(received.Reserved[3])
+		reserved := util.Uint32(received.Reserved)
 
-		delta := int64(uint32(time.Now().UnixNano()/1000) - reserved)
+		now := uint32(time.Now().UnixNano() / 1000)
+		delta := int64(now - reserved)
 		// log.Info(delta, reserved)
 		total += delta
-		if rcount%30000 == 0 {
-			log.Debug(delta)
-		}
-
-		if stop && rcount == scount {
-			break
+		if i%(count/10) == 0 {
+			log.Debugf("%d: %d %d %s", i, received.MessageId, received.DataLength, received.Data)
+			log.Infof("%06d %d-%d=%d", received.MessageId, now, reserved, delta)
 		}
 	}
 
-	log.Infof("Requests/sec: %d/%s = %d", rcount, time.Now().Sub(start),
-		1e9*time.Duration(rcount)/time.Now().Sub(start))
-	log.Infof("Latency: %s/%d = %s", time.Duration(1000*total), rcount,
-		1000*time.Duration(total)/time.Duration(rcount))
+	used := time.Since(start)
+
+	log.Infof("Requests/sec: %d/%s = %d", count, used, time.Duration(count)*1e9/used)
+	log.Infof("Latency: %s/%d = %s", time.Duration(total*1000), count,
+		time.Duration(total*1000)/time.Duration(count))
 }

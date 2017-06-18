@@ -27,7 +27,7 @@ func handleFrame(frame *simpletcp.Frame) *simpletcp.Frame {
 func main() {
 	log.SetLevel(log.Lwarn)
 
-	go http.ListenAndServe("0.0.0.0:6060", nil)
+	go http.ListenAndServe("0.0.0.0:6061", nil)
 
 	server := &simpletcp.Server{
 		Host: "0.0.0.0",

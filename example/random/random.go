@@ -18,9 +18,8 @@ const (
 	letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
 )
 
-var src = rand.NewSource(time.Now().UnixNano())
-
 func String(n int) string {
+	var src = rand.NewSource(time.Now().UnixNano())
 	b := make([]byte, n)
 	// A src.Int63() generates 63 random bits, enough for letterIdxMax characters!
 	for i, cache, remain := n-1, src.Int63(), letterIdxMax; i >= 0; {
@@ -39,6 +38,8 @@ func String(n int) string {
 }
 
 func Bytes(n int) []byte {
+	var src = rand.NewSource(time.Now().UnixNano())
+
 	b := make([]byte, n)
 	// A src.Int63() generates 63 random bits, enough for letterIdxMax characters!
 	for i, cache, remain := n-1, src.Int63(), letterIdxMax; i >= 0; {

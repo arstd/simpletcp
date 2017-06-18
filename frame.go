@@ -21,7 +21,7 @@ const MaxLength uint32 = 1 << 16
 var Reserved [4]byte
 
 type Header struct {
-	// FixedHeader [2]byte
+	// Fixed [2]byte
 	Version  byte
 	DataType byte
 

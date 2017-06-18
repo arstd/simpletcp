@@ -93,7 +93,7 @@ func (s *Server) accept(l *net.TCPListener) error {
 }
 
 func (s *Server) process(conn *net.TCPConn) {
-	log.Infof("connection from %s", conn.RemoteAddr())
+	log.Warnf("connection from %s", conn.RemoteAddr())
 	// defer conn.Close()
 
 	conn.SetNoDelay(true)
@@ -106,7 +106,7 @@ func (s *Server) process(conn *net.TCPConn) {
 
 	go s.readLoop(inQueue, conn)
 
-	for i := 0; i < Processors; i++ {
+	for i := 0; i < s.Processors; i++ {
 		if s.HandleFrame != nil {
 			go s.processLoopFrame(outQueue, inQueue)
 		} else {
@@ -118,8 +118,8 @@ func (s *Server) process(conn *net.TCPConn) {
 }
 
 func (s *Server) readLoop(inQueue chan<- *Frame, conn *net.TCPConn) error {
-	conn.SetReadBuffer(2048)
-	br := bufio.NewReaderSize(conn, 2048)
+	conn.SetReadBuffer(204800)
+	br := bufio.NewReaderSize(conn, 204800)
 	for {
 		if frame, err := Read(br, s.Fixed, s.MaxLength); err != nil {
 			if err == io.EOF {
@@ -144,7 +144,7 @@ func (s *Server) processLoopFrame(outQueue chan<- *Frame, inQueue <-chan *Frame)
 	}()
 	var frame *Frame
 	for {
-		frame = <-inQueue
+		frame = <-inQueue // TODO block hear forever
 		if frame.Version == VersionPing {
 			outQueue <- frame
 		} else {
@@ -173,10 +173,10 @@ func (s *Server) processLoop(outQueue chan<- *Frame, inQueue <-chan *Frame) (err
 }
 
 func (s *Server) writeLoop(outQueue <-chan *Frame, conn *net.TCPConn) (err error) {
-	conn.SetWriteBuffer(1024)
-	bw := bufio.NewWriterSize(conn, 1024)
+	conn.SetWriteBuffer(204800)
+	bw := bufio.NewWriterSize(conn, 204800)
 	for {
-		frame := <-outQueue
+		frame := <-outQueue // TODO block hear forever
 		if err = Write(bw, s.Fixed, frame); err != nil {
 			if err == io.EOF {
 				conn.Close()
