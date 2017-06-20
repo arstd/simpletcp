@@ -16,9 +16,12 @@ func (Callback) OnConnect(c *tcp.Conn) bool {
 func (cb Callback) OnMessage(c *tcp.Conn, p tcp.Packet) (tcp.Packet, bool) {
 	pack := p.(*Packet)
 
-	res := cb(pack.Data)
+	// if ping message, return immediately
+	if pack.Version() != DataTypePing {
+		res := cb(pack.Data)
+		pack.Data = res
+	}
 
-	pack.Data = res
 	return pack, true
 }
 

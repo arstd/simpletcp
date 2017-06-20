@@ -2,50 +2,41 @@ package main
 
 import (
 	"bytes"
-	"net/http"
-	_ "net/http/pprof"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/arstd/log"
-	"github.com/arstd/simpletcp"
+	"github.com/arstd/simpletcp/simple"
+	"github.com/arstd/tcp"
 )
 
 func handle(data []byte) []byte {
-	log.Info(data)
+	log.Debug(data)
 	return bytes.ToUpper(data)
 }
 
-var scount int
-
-func handleFrame(frame *simpletcp.Frame) *simpletcp.Frame {
-	scount++
-	log.Infof("%d: %d %d %s", scount, frame.MessageId, frame.DataLength, frame.Data)
-	// frame.Data = bytes.ToUpper(frame.Data)
-	frame.Data = nil
-	return frame
-}
-
 func main() {
-	log.SetLevel(log.Lwarn)
-
-	go http.ListenAndServe("0.0.0.0:6061", nil)
-
-	server := &simpletcp.Server{
-		Host: "0.0.0.0",
-		Port: 8623,
-
-		BufferSize: 20480,
-		Processors: 32,
-
-		// FixedHeader : simpletcp.FixedHeader,
-		// MaxLength: simpletcp.MaxLength,
-
-		// Version   : simpletcp.Version1,
-		// DataType: simpletcp.DataTypeJSON,
-
-		// Handle: handle,
-		HandleFrame: handleFrame,
+	// creates a server
+	config := &tcp.Config{
+		Addr: ":8623",
+		CallbackProcessorLimit: 64,
+		PacketSendChanLimit:    20,
+		PacketReceiveChanLimit: 20,
 	}
+	srv := tcp.NewServer(config, simple.Callback(handle), &simple.Protocol{})
 
-	log.Printf("server is running at %s:%d", server.Host, server.Port)
-	log.Fatal(server.Start())
+	go func() {
+		log.Printf("tcp server is listening at %s", config.Addr)
+		log.Errorn(srv.Start(time.Second))
+	}()
+
+	// wait signal to shutdown gracefully
+	sig := make(chan os.Signal)
+	signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT, syscall.SIGKILL, syscall.SIGHUP, syscall.SIGQUIT)
+	log.Printf("receive signal `%s`", <-sig)
+
+	log.Print("stop tcp server gracefully")
+	srv.Stop()
 }

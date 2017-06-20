@@ -10,6 +10,7 @@ import (
 	"github.com/arstd/simpletcp"
 	"github.com/arstd/simpletcp/example/random"
 	"github.com/arstd/simpletcp/example/util"
+	"github.com/arstd/simpletcp/simple"
 )
 
 const randLength = 2048
@@ -17,7 +18,34 @@ const randLength = 2048
 func main() {
 	// useBytes(30000 * time.Millisecond)
 	// useFrame(1000 * time.Millisecond)
-	asyncFrame(6e5)
+	// asyncFrame(6e5)
+
+	single()
+}
+
+func single() {
+	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:8623")
+	log.Fataln(err)
+	tcpConn, err := net.DialTCP("tcp", nil, addr)
+	log.Fataln(err)
+
+	defer tcpConn.Close()
+
+	tcpConn.SetNoDelay(true)
+
+	pack := simple.NewPacketMessageId(0)
+	pack.Data = random.Bytes(rand.Intn(randLength))
+
+	log.Fataln(tcpConn.Write(pack.GetHeader()))
+	log.Fataln(tcpConn.Write(pack.GetBody()))
+
+	proto := &simple.Protocol{}
+
+	res, err := proto.ReadPacket(tcpConn)
+	pack = res.(*simple.Packet)
+	log.Fataln(err)
+	log.Debugf("% x", res.GetHeader())
+	log.Debug(pack.MessageId(), pack.DataLength(), pack.Data)
 }
 
 func useBytes(period time.Duration) {
@@ -43,7 +71,7 @@ func useBytes(period time.Duration) {
 
 	for !stop {
 		count++
-		message := []byte(random.String(rand.Intn(randLength)))
+		message := random.Bytes(rand.Intn(randLength))
 		_, err := client.Send(message)
 		if err != nil {
 			log.Fatal(err)
