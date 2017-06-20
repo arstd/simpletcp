@@ -3,4 +3,4 @@ import:
 - package: github.com/arstd/log
   version: 7c7cb062bb52c307f9b417b5ad966d0ae706adf4
 - package: github.com/arstd/tcp
-  version: c285d8aea10c117fe00d9cbeda2d429ad153d85c
+  version: bbcf1fd9cd484830c728f18bd7506d51af0b0b90

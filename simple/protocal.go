@@ -1,8 +1,8 @@
 package simple
 
 import (
+	"bufio"
 	"io"
-	"net"
 
 	"github.com/arstd/log"
 	"github.com/arstd/tcp"
@@ -10,7 +10,7 @@ import (
 
 type Protocol struct{}
 
-func (p *Protocol) ReadPacket(conn *net.TCPConn) (tcp.Packet, error) {
+func (p *Protocol) ReadPacket(conn *bufio.Reader) (tcp.Packet, error) {
 	pack := NewPacketHeader()
 
 	// read header
