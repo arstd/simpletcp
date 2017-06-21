@@ -17,6 +17,7 @@ var (
 
 type Packet struct {
 	header []byte
+	data   []byte
 	Data   []byte
 }
 

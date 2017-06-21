@@ -10,7 +10,7 @@ import (
 
 type Protocol struct{}
 
-func (p *Protocol) ReadPacket(conn *bufio.Reader) (tcp.Packet, error) {
+func (*Protocol) ReadPacket(conn *bufio.Reader) (tcp.Packet, error) {
 	pack := NewPacketHeader()
 
 	// read header
@@ -23,11 +23,25 @@ func (p *Protocol) ReadPacket(conn *bufio.Reader) (tcp.Packet, error) {
 
 	// reader data
 	dataLength := pack.DataLength()
-	pack.Data = make([]byte, dataLength)
-	if _, err := io.ReadFull(conn, pack.Data); err != nil {
-		log.Error(err)
-		return nil, err
+	if dataLength == 0 {
+		pack.Data = nil
+	} else {
+		pack.Data = make([]byte, dataLength)
+		if _, err := io.ReadFull(conn, pack.Data); err != nil {
+			log.Error(err)
+			return nil, err
+		}
 	}
 
 	return pack, nil
+}
+
+func (*Protocol) WritePacket(conn *bufio.Writer, p tcp.Packet) (err error) {
+	if _, err = conn.Write(p.GetHeader()); err != nil {
+		return
+	}
+	if _, err = conn.Write(p.GetBody()); err != nil {
+		return
+	}
+	return
 }
