@@ -1,8 +1,8 @@
-hash: f535a622430953166ad3e77211379b32df16ceabbda37623af48eed83b14166f
-updated: 2017-06-20T18:32:38.884579799+08:00
+hash: 90f974f21f3a2aa612d33a94ddf7ba445b7a49cd12c96164d1317a100ead26af
+updated: 2017-06-21T22:51:41.227900869+08:00
 imports:
 - name: github.com/arstd/log
   version: 7c7cb062bb52c307f9b417b5ad966d0ae706adf4
 - name: github.com/arstd/tcp
-  version: bbcf1fd9cd484830c728f18bd7506d51af0b0b90
+  version: 784756306b9508c33dffde71714603c4c19941a2
 testImports: []
