@@ -1,4 +1,6 @@
 package: github.com/arstd/simpletcp
 import:
 - package: github.com/arstd/log
-  version: d2d4b219246a6c72e73eb3c5efca890e2ca4bccb
+  version: 7c7cb062bb52c307f9b417b5ad966d0ae706adf4
+- package: github.com/arstd/tcp
+  version: cbf3310e4d436efeab1a065d94b27a5085c9c961
