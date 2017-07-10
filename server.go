@@ -126,14 +126,13 @@ func (s *Server) process(conn *net.TCPConn) {
 func (s *Server) ReadLoop(inQueue chan<- *Frame, conn *net.TCPConn) (err error) {
 	defer conn.CloseRead()
 
-	conn.SetReadBuffer(4 * 1024 * 1024)
-	buf := make([]byte, 4*1024*1024)
+	size := 4 * 1024 * 1024
+	conn.SetReadBuffer(size)
+	buf := make([]byte, size)
 
-	timeout := 1000 * time.Millisecond
 	f := NewFrameHead() // an uncomplete frame
 	var head, body int  // readed head, readed body
 	for {
-		conn.SetReadDeadline(time.Now().Add(timeout))
 		n, err := conn.Read(buf)
 		if err != nil {
 			if err == io.EOF {
@@ -213,12 +212,12 @@ func (s *Server) handleFrameLoop(outQueue chan<- *Frame, inQueue <-chan *Frame) 
 }
 
 func (s *Server) handleLoop(outQueue chan<- *Frame, inQueue <-chan *Frame) (err error) {
-	// defer func() {
-	// 	if err := recover(); err != nil {
-	// 		log.Stack(err)
-	// 		go s.handleLoop(outQueue, inQueue)
-	// 	}
-	// }()
+	defer func() {
+		if err := recover(); err != nil {
+			log.Stack(err)
+			go s.handleLoop(outQueue, inQueue)
+		}
+	}()
 	var f *Frame
 	for {
 		f = <-inQueue
@@ -229,22 +228,39 @@ func (s *Server) handleLoop(outQueue chan<- *Frame, inQueue <-chan *Frame) (err 
 	}
 }
 
-func (s *Server) WriteLoop(outQueue <-chan *Frame, w *net.TCPConn) (err error) {
-	defer w.CloseWrite()
+func (s *Server) WriteLoop(outQueue <-chan *Frame, conn *net.TCPConn) (err error) {
+	defer conn.CloseWrite()
 
-	w.SetWriteBuffer(256 * 1024)
-
+	size := 1024 * 1024
+	conn.SetWriteBuffer(size)
+	buf := make([]byte, size)
+	var i int
 	var f *Frame
 	for {
-		f = <-outQueue
-		if _, err = w.Write(f.head); err != nil {
-			log.Error(err)
-			return err
-		}
-		if _, err = w.Write(f.data); err != nil {
-			log.Error(err)
-			return err
-		}
+		select {
+		case f = <-outQueue:
+			if i+HeadLength+f.DataLength() > size {
+				if _, err := conn.Write(buf[:i]); err != nil {
+					log.Error(err)
+					return err
+				}
+				i = 0
+			}
+			i += copy(buf[i:], f.head)
+			i += copy(buf[i:], f.data)
 
+		default:
+			if i == 0 { // buf no data
+				time.Sleep(100 * time.Microsecond)
+				break
+			}
+			if i > 0 { // buf not full but no frame
+				if _, err := conn.Write(buf[:i]); err != nil {
+					log.Error(err)
+					return err
+				}
+				i = 0
+			}
+		}
 	}
 }

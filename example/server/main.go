@@ -2,14 +2,9 @@ package main
 
 import (
 	"bytes"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
 	"github.com/arstd/log"
-	"github.com/arstd/simpletcp/simple"
-	"github.com/arstd/tcp"
+	"github.com/arstd/simpletcp"
 )
 
 func handle(data []byte) []byte {
@@ -18,25 +13,15 @@ func handle(data []byte) []byte {
 }
 
 func main() {
-	// creates a server
-	config := &tcp.Config{
-		Addr: ":8623",
-		CallbackProcessorLimit: 64,
-		PacketSendChanLimit:    20,
-		PacketReceiveChanLimit: 20,
+	srv := &simpletcp.Server{
+		Host: "",
+		Port: 8090,
+
+		QueueSize:  32,
+		Processors: 8,
+
+		Handle: func(data []byte) []byte { return data },
 	}
-	srv := tcp.NewServer(config, simple.Callback(handle), &simple.Protocol{})
-
-	go func() {
-		log.Printf("tcp server is listening at %s", config.Addr)
-		log.Errorn(srv.Start(time.Second))
-	}()
-
-	// wait signal to shutdown gracefully
-	sig := make(chan os.Signal)
-	signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT, syscall.SIGKILL, syscall.SIGHUP, syscall.SIGQUIT)
-	log.Printf("receive signal `%s`", <-sig)
-
-	log.Print("stop tcp server gracefully")
-	srv.Stop()
+	log.Printf("tcp server is listening at %s:%d", srv.Host, srv.Port)
+	log.Fataln(srv.Start())
 }
