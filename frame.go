@@ -1,13 +1,24 @@
 package simpletcp
 
-import "errors"
+import (
+	"encoding/binary"
+	"errors"
+	"fmt"
+)
 
-var Fixed = [2]byte{'A', 'c'}
+var (
+	ErrFixedHead        = errors.New("fixed head not 0x41 0x63")
+	ErrFrameNil         = errors.New("frame is nil")
+	ErrDataLengthExceed = errors.New("data length exceed")
+)
 
 const (
+	HeadLength       = 16
 	VersionPing byte = 0x00
 	Version1    byte = 0x01
 )
+
+var Fixed = [2]byte{'A', 'c'}
 
 const (
 	DataTypeJSON     byte = 0x01
@@ -18,25 +29,81 @@ const (
 
 const MaxLength uint32 = 1 << 16
 
-var Reserved [4]byte
-
-type Header struct {
-	// Fixed [2]byte
-	Version  byte
-	DataType byte
-
-	MessageId  uint32
-	DataLength uint32
-
-	Reserved [4]byte
-}
+var Reserved [4]byte = [4]byte{0, 0, 0, 0}
 
 type Frame struct {
-	Header
-	Data []byte
+	head []byte
+	data []byte
 }
 
-var (
-	ErrFrameNil         = errors.New("frame is nil")
-	ErrDataLengthExceed = errors.New("data length exceed")
-)
+// NewFrameHead return frame with blank head
+func NewFrameHead() *Frame {
+	return &Frame{head: make([]byte, 16)}
+}
+
+func NewFrameDefault() *Frame {
+	f := NewFrameHead()
+	f.head[0] = 'A'
+	f.head[1] = 'c'
+	f.head[2] = Version1
+	f.head[3] = DataTypeJSON
+	return f
+}
+
+func (f *Frame) SetVersion(version byte) {
+	f.head[2] = version
+}
+
+func (f *Frame) SetMessageId(messageId uint32) {
+	binary.BigEndian.PutUint32(f.head[4:8], messageId)
+}
+
+func (f *Frame) SetDataWithLength(data []byte) {
+	binary.BigEndian.PutUint32(f.head[8:12], uint32(len(data)))
+	f.data = data
+}
+
+func (f *Frame) SetReserved(reserved uint32) {
+	binary.BigEndian.PutUint32(f.head[12:16], reserved)
+}
+
+func (f *Frame) SetData(data []byte) {
+	f.data = data
+}
+
+func (f *Frame) Head() []byte {
+	return f.head
+}
+
+func (f *Frame) FixedHead() []byte {
+	return f.head[0:2]
+}
+
+func (f *Frame) Version() byte {
+	return f.head[2]
+}
+
+func (f *Frame) DataType() byte {
+	return f.head[3]
+}
+
+func (f *Frame) MessageId() uint32 {
+	return binary.BigEndian.Uint32(f.head[4:8])
+}
+
+func (f *Frame) DataLength() int {
+	return int(binary.BigEndian.Uint32(f.head[8:12]))
+}
+
+func (f *Frame) Reserved() []byte {
+	return f.head[12:16]
+}
+
+func (f *Frame) Data() []byte {
+	return f.data
+}
+
+func (f *Frame) String() string {
+	return fmt.Sprintf("%c %x %x %d %d %x: %s", f.FixedHead(), f.Version(),
+		f.DataType(), f.MessageId(), f.DataLength(), f.Reserved(), f.data)
+}

@@ -1,7 +1,6 @@
 package simpletcp
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -11,14 +10,18 @@ import (
 	"github.com/arstd/log"
 )
 
-const BufferSize = 20480
-const Processors = 32
+const ReadBufferSize = 1024 * 1024
+const WriteBufferSize = 1024 * 1024
+const Processors = 8
 
 type Server struct {
 	Host string
 	Port int
 
-	BufferSize int // read and write buffer size of one connection
+	ReadBufferSize  int // read buffer size of one connection
+	WriteBufferSize int // write buffer size of one connection
+
+	QueueSize  int // frame queue in/out size
 	Processors int // goroutine number of one connection
 
 	Fixed     [2]byte // default 'Ac' (0x41 0x63)
@@ -47,8 +50,11 @@ func (s *Server) init() error {
 	if s.MaxLength == 0 {
 		s.MaxLength = MaxLength
 	}
-	if s.BufferSize == 0 {
-		s.BufferSize = BufferSize
+	if s.WriteBufferSize == 0 {
+		s.WriteBufferSize = WriteBufferSize
+	}
+	if s.ReadBufferSize == 0 {
+		s.ReadBufferSize = ReadBufferSize
 	}
 	if s.Processors == 0 {
 		s.Processors = Processors
@@ -93,98 +99,152 @@ func (s *Server) accept(l *net.TCPListener) error {
 }
 
 func (s *Server) process(conn *net.TCPConn) {
-	log.Warnf("connection from %s", conn.RemoteAddr())
+	log.Infof("connection from %s", conn.RemoteAddr())
 	// defer conn.Close()
 
 	conn.SetNoDelay(true)
 
-	conn.SetKeepAlive(true)
-	conn.SetKeepAlivePeriod(10 * time.Second)
+	// conn.SetKeepAlive(true)
+	// conn.SetKeepAlivePeriod(10 * time.Second)
 
-	inQueue := make(chan *Frame, s.BufferSize)
-	outQueue := make(chan *Frame, s.BufferSize)
+	inQueue := make(chan *Frame, s.QueueSize)
+	outQueue := make(chan *Frame, s.QueueSize)
 
-	go s.readLoop(inQueue, conn)
+	go s.ReadLoop(inQueue, conn)
 
 	for i := 0; i < s.Processors; i++ {
 		if s.HandleFrame != nil {
-			go s.processLoopFrame(outQueue, inQueue)
+			go s.handleFrameLoop(outQueue, inQueue)
 		} else {
-			go s.processLoop(outQueue, inQueue)
+			go s.handleLoop(outQueue, inQueue)
 		}
 	}
 
-	go s.writeLoop(outQueue, conn)
+	s.WriteLoop(outQueue, conn)
 }
 
-func (s *Server) readLoop(inQueue chan<- *Frame, conn *net.TCPConn) error {
-	conn.SetReadBuffer(204800)
-	br := bufio.NewReaderSize(conn, 204800)
+func (s *Server) ReadLoop(inQueue chan<- *Frame, conn *net.TCPConn) (err error) {
+	defer conn.CloseRead()
+
+	conn.SetReadBuffer(4 * 1024 * 1024)
+	buf := make([]byte, 4*1024*1024)
+
+	timeout := 1000 * time.Millisecond
+	f := NewFrameHead() // an uncomplete frame
+	var head, body int  // readed head, readed body
 	for {
-		if frame, err := Read(br, s.Fixed, s.MaxLength); err != nil {
+		conn.SetReadDeadline(time.Now().Add(timeout))
+		n, err := conn.Read(buf)
+		if err != nil {
 			if err == io.EOF {
-				conn.Close()
-			} else {
-				log.Error(err)
-				conn.CloseRead()
+				return nil
 			}
+
+			if ne, ok := err.(net.Error); !ok || !ne.Timeout() {
+				log.Error(err)
+				return err
+			}
+		}
+
+		if n == 0 { // no data
+			continue
+		}
+
+		var i int
+		for {
+			// read head
+			if head < HeadLength { // require head
+				m := copy(f.head[head:], buf[i:n])
+				head += m      // head required length
+				i += m         // data from i: buf[i:n]
+				if head >= 2 { // fixed head complete at least
+					fh := f.FixedHead()
+					if fh[0] != Fixed[0] || fh[1] != Fixed[1] {
+						log.Error(ErrFixedHead)
+						return ErrFixedHead
+					}
+				}
+
+				if head < HeadLength { // data not enough to head
+					break
+				}
+				body = 0
+				f.data = make([]byte, f.DataLength())
+			}
+
+			// read body
+			m := copy(f.data[body:], buf[i:n])
+			body += m // body required length
+			i += m    // data from i: buf[i:n]
+
+			if body < f.DataLength() { // data not enough to body
+				break
+			}
+			// frame complete
+
+			inQueue <- f
+
+			// another frame
+			head = 0
+			f = NewFrameHead()
+
+			if i >= n {
+				break
+			}
+		}
+	}
+}
+
+func (s *Server) handleFrameLoop(outQueue chan<- *Frame, inQueue <-chan *Frame) (err error) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Stack(err)
+			go s.handleFrameLoop(outQueue, inQueue)
+		}
+	}()
+	var f *Frame
+	for {
+		f = <-inQueue
+		if f.Version() != VersionPing {
+			f = s.HandleFrame(f)
+		}
+		outQueue <- f
+	}
+}
+
+func (s *Server) handleLoop(outQueue chan<- *Frame, inQueue <-chan *Frame) (err error) {
+	// defer func() {
+	// 	if err := recover(); err != nil {
+	// 		log.Stack(err)
+	// 		go s.handleLoop(outQueue, inQueue)
+	// 	}
+	// }()
+	var f *Frame
+	for {
+		f = <-inQueue
+		if f.Version() != VersionPing {
+			f.SetDataWithLength(s.Handle(f.data))
+		}
+		outQueue <- f
+	}
+}
+
+func (s *Server) WriteLoop(outQueue <-chan *Frame, w *net.TCPConn) (err error) {
+	defer w.CloseWrite()
+
+	w.SetWriteBuffer(256 * 1024)
+
+	var f *Frame
+	for {
+		f = <-outQueue
+		if _, err = w.Write(f.head); err != nil {
+			log.Error(err)
 			return err
-		} else {
-			inQueue <- frame
 		}
-	}
-}
+		if _, err = w.Write(f.data); err != nil {
+			log.Error(err)
+			return err
+		}
 
-func (s *Server) processLoopFrame(outQueue chan<- *Frame, inQueue <-chan *Frame) (err error) {
-	defer func() {
-		if err := recover(); err != nil {
-			log.Stack(err)
-			go s.processLoopFrame(outQueue, inQueue)
-		}
-	}()
-	var frame *Frame
-	for {
-		frame = <-inQueue // TODO block hear forever
-		if frame.Version == VersionPing {
-			outQueue <- frame
-		} else {
-			outQueue <- s.HandleFrame(frame)
-		}
-	}
-}
-
-func (s *Server) processLoop(outQueue chan<- *Frame, inQueue <-chan *Frame) (err error) {
-	defer func() {
-		if err := recover(); err != nil {
-			log.Stack(err)
-			go s.processLoop(outQueue, inQueue)
-		}
-	}()
-	var frame *Frame
-	for {
-		frame = <-inQueue
-		if frame.Version == VersionPing {
-			outQueue <- frame
-		} else {
-			frame.Data = s.Handle(frame.Data)
-			outQueue <- frame
-		}
-	}
-}
-
-func (s *Server) writeLoop(outQueue <-chan *Frame, conn *net.TCPConn) (err error) {
-	conn.SetWriteBuffer(204800)
-	bw := bufio.NewWriterSize(conn, 204800)
-	for {
-		frame := <-outQueue // TODO block hear forever
-		if err = Write(bw, s.Fixed, frame); err != nil {
-			if err == io.EOF {
-				conn.Close()
-			} else {
-				log.Error(err)
-				conn.CloseWrite()
-			}
-			return
-		}
 	}
 }
