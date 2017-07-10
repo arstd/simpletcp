@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/arstd/log"
@@ -32,9 +33,17 @@ type Server struct {
 
 	Handle      func([]byte) []byte // one of handlers must not nil
 	HandleFrame func(*Frame) *Frame
+
+	l     *net.TCPListener
+	close chan struct{}  // send close signal
+	wg    sync.WaitGroup // wait all conns to close, then stop server
 }
 
 func (s *Server) init() error {
+	if s.Handle == nil && s.HandleFrame == nil {
+		return errors.New("one of handle/handleFrame func not nil")
+	}
+
 	if s.Host == "" {
 		s.Host = "0.0.0.0"
 	}
@@ -60,15 +69,13 @@ func (s *Server) init() error {
 		s.Processors = Processors
 	}
 
-	if s.Handle == nil && s.HandleFrame == nil {
-		return errors.New("one of handle/handleFrame func not nil")
-	}
+	s.close = make(chan struct{})
 
 	return nil
 }
 
-func (s *Server) Start() error {
-	if err := s.init(); err != nil {
+func (s *Server) Start() (err error) {
+	if err = s.init(); err != nil {
 		return err
 	}
 
@@ -77,53 +84,94 @@ func (s *Server) Start() error {
 	if err != nil {
 		return err
 	}
-	l, err := net.ListenTCP("tcp", tcpAddr)
+	s.l, err = net.ListenTCP("tcp", tcpAddr)
 	if err != nil {
 		return err
 	}
-	defer l.Close()
 
-	s.accept(l)
-
-	return errors.New("unreachable code, tcp accept exception?")
-}
-
-func (s *Server) accept(l *net.TCPListener) error {
 	for {
-		conn, err := l.AcceptTCP()
+		conn, err := s.l.AcceptTCP()
 		if err != nil {
-			continue
+			select {
+			case <-s.close:
+				return nil
+			default:
+				log.Error(err)
+				return err
+			}
 		}
+		s.wg.Add(1)
 		go s.process(conn)
 	}
 }
 
+func (s *Server) Close() error {
+	log.Trace("send server close signal")
+	close(s.close) // send close signal
+
+	s.wg.Wait()
+	log.Trace("all connection closed")
+
+	log.Trace("close server")
+	return s.l.Close()
+}
+
 func (s *Server) process(conn *net.TCPConn) {
-	log.Infof("connection from %s", conn.RemoteAddr())
-	// defer conn.Close()
+	log.Infof("accept connection from %s", conn.RemoteAddr())
 
 	conn.SetNoDelay(true)
-
-	// conn.SetKeepAlive(true)
-	// conn.SetKeepAlivePeriod(10 * time.Second)
 
 	inQueue := make(chan *Frame, s.QueueSize)
 	outQueue := make(chan *Frame, s.QueueSize)
 
-	go s.ReadLoop(inQueue, conn)
+	go readLoop(inQueue, conn)
 
+	var wg sync.WaitGroup
 	for i := 0; i < s.Processors; i++ {
+		wg.Add(1)
 		if s.HandleFrame != nil {
-			go s.handleFrameLoop(outQueue, inQueue)
+			go handleFrameLoop(outQueue, inQueue, s.HandleFrame, &wg)
 		} else {
-			go s.handleLoop(outQueue, inQueue)
+			go handleLoop(outQueue, inQueue, s.Handle, &wg)
 		}
 	}
 
-	s.WriteLoop(outQueue, conn)
+	closed := make(chan struct{}) // can read after connect closed
+	go writeLoop(outQueue, conn, closed)
+
+	// close read
+	// exit read loop
+	// close inQueue
+	// exit all handle loop
+	// close outQueue
+	// close write
+
+	go func() {
+		select {
+		case <-s.close:
+			// inQueue close when read closed and read loop exit
+			// handle loop exit when inQueue closed
+			log.Trace("close read as server will close")
+			log.Errorn(conn.CloseRead())
+		case <-closed:
+			// exit go routine
+		}
+	}()
+
+	// hear wait all handle complete
+	wg.Wait()
+	log.Trace("all handle loop exit")
+	// write close when outQueue closed
+	log.Trace("close outQueue")
+	close(outQueue)
+
+	<-closed
+	log.Infof("close connection from %s", conn.RemoteAddr())
+	log.Errorn(conn.Close())
+	s.wg.Done()
 }
 
-func (s *Server) ReadLoop(inQueue chan<- *Frame, conn *net.TCPConn) (err error) {
+func readLoop(inQueue chan<- *Frame, conn *net.TCPConn) (err error) {
 	defer conn.CloseRead()
 
 	size := 4 * 1024 * 1024
@@ -135,14 +183,14 @@ func (s *Server) ReadLoop(inQueue chan<- *Frame, conn *net.TCPConn) (err error) 
 	for {
 		n, err := conn.Read(buf)
 		if err != nil {
-			if err == io.EOF {
-				return nil
-			}
-
-			if ne, ok := err.(net.Error); !ok || !ne.Timeout() {
+			if err != io.EOF {
 				log.Error(err)
-				return err
+			} else {
+				log.Trace("read close")
 			}
+			log.Trace("close inQueue")
+			close(inQueue)
+			return err
 		}
 
 		if n == 0 { // no data
@@ -194,41 +242,51 @@ func (s *Server) ReadLoop(inQueue chan<- *Frame, conn *net.TCPConn) (err error) 
 	}
 }
 
-func (s *Server) handleFrameLoop(outQueue chan<- *Frame, inQueue <-chan *Frame) (err error) {
+func handleFrameLoop(outQueue chan<- *Frame, inQueue <-chan *Frame, h func(*Frame) *Frame, wg *sync.WaitGroup) (err error) {
 	defer func() {
 		if err := recover(); err != nil {
 			log.Stack(err)
-			go s.handleFrameLoop(outQueue, inQueue)
+			go handleFrameLoop(outQueue, inQueue, h, wg)
 		}
 	}()
 	var f *Frame
+	var ok bool
 	for {
-		f = <-inQueue
+		if f, ok = <-inQueue; !ok {
+			log.Trace("exit hand loop")
+			wg.Done()
+			return nil
+		}
 		if f.Version() != VersionPing {
-			f = s.HandleFrame(f)
+			f = h(f)
 		}
 		outQueue <- f
 	}
 }
 
-func (s *Server) handleLoop(outQueue chan<- *Frame, inQueue <-chan *Frame) (err error) {
+func handleLoop(outQueue chan<- *Frame, inQueue <-chan *Frame, h func([]byte) []byte, wg *sync.WaitGroup) (err error) {
 	defer func() {
 		if err := recover(); err != nil {
 			log.Stack(err)
-			go s.handleLoop(outQueue, inQueue)
+			go handleLoop(outQueue, inQueue, h, wg)
 		}
 	}()
 	var f *Frame
+	var ok bool
 	for {
-		f = <-inQueue
+		if f, ok = <-inQueue; !ok {
+			log.Trace("exit hand loop")
+			wg.Done()
+			return nil
+		}
 		if f.Version() != VersionPing {
-			f.SetDataWithLength(s.Handle(f.data))
+			f.SetDataWithLength(h(f.data))
 		}
 		outQueue <- f
 	}
 }
 
-func (s *Server) WriteLoop(outQueue <-chan *Frame, conn *net.TCPConn) (err error) {
+func writeLoop(outQueue <-chan *Frame, conn *net.TCPConn, closed chan struct{}) (err error) {
 	defer conn.CloseWrite()
 
 	size := 1024 * 1024
@@ -236,9 +294,16 @@ func (s *Server) WriteLoop(outQueue <-chan *Frame, conn *net.TCPConn) (err error
 	buf := make([]byte, size)
 	var i int
 	var f *Frame
+	var ok bool
 	for {
 		select {
-		case f = <-outQueue:
+		case f, ok = <-outQueue:
+			if !ok {
+				log.Trace("close write")
+				log.Errorn(conn.CloseWrite())
+				close(closed)
+				return nil
+			}
 			if i+HeadLength+f.DataLength() > size {
 				if _, err := conn.Write(buf[:i]); err != nil {
 					log.Error(err)
