@@ -58,16 +58,16 @@ func (f *Frame) SetMessageId(messageId uint32) {
 	binary.BigEndian.PutUint32(f.head[4:8], messageId)
 }
 
-func (f *Frame) SetDataWithLength(data []byte) {
-	binary.BigEndian.PutUint32(f.head[8:12], uint32(len(data)))
-	f.data = data
-}
-
 func (f *Frame) SetReserved(reserved uint32) {
 	binary.BigEndian.PutUint32(f.head[12:16], reserved)
 }
 
 func (f *Frame) SetData(data []byte) {
+	f.data = data
+}
+
+func (f *Frame) SetDataWithLength(data []byte) {
+	binary.BigEndian.PutUint32(f.head[8:12], uint32(len(data)))
 	f.data = data
 }
 
@@ -91,8 +91,8 @@ func (f *Frame) MessageId() uint32 {
 	return binary.BigEndian.Uint32(f.head[4:8])
 }
 
-func (f *Frame) DataLength() int {
-	return int(binary.BigEndian.Uint32(f.head[8:12]))
+func (f *Frame) DataLength() uint32 {
+	return binary.BigEndian.Uint32(f.head[8:12])
 }
 
 func (f *Frame) Reserved() []byte {
@@ -105,5 +105,5 @@ func (f *Frame) Data() []byte {
 
 func (f *Frame) String() string {
 	return fmt.Sprintf("%c %x %x %d %d %x: %s", f.FixedHead(), f.Version(),
-		f.DataType(), f.MessageId(), f.DataLength(), f.Reserved(), f.data)
+		f.DataType(), f.MessageId(), f.DataLength(), f.Reserved(), f.Data())
 }

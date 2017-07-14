@@ -100,7 +100,7 @@ func send(count uint32) {
 
 	var total int64
 	recv := simpletcp.NewFrameHead()
-	buf := make([]byte, 4096)
+	buf := make([]byte, simpletcp.MaxLength)
 	tcpConn.SetReadBuffer(4096 * 1024)
 	for i := uint32(1); i <= count; i++ {
 		log.Fataln(io.ReadFull(tcpConn, recv.Head()))

@@ -202,19 +202,24 @@ func readLoop(inQueue chan<- *Frame, conn *net.TCPConn) (err error) {
 			// read head
 			if head < HeadLength { // require head
 				m := copy(f.head[head:], buf[i:n])
-				head += m      // head required length
-				i += m         // data from i: buf[i:n]
-				if head >= 2 { // fixed head complete at least
-					fh := f.FixedHead()
-					if fh[0] != Fixed[0] || fh[1] != Fixed[1] {
-						log.Error(ErrFixedHead)
-						return ErrFixedHead
-					}
-				}
+				head += m // head required length
+				i += m    // data from i: buf[i:n]
 
 				if head < HeadLength { // data not enough to head
 					break
 				}
+
+				fh := f.FixedHead()
+				if fh[0] != Fixed[0] || fh[1] != Fixed[1] {
+					log.Error(ErrFixedHead)
+					return ErrFixedHead
+				}
+				dl := f.DataLength()
+				if dl > MaxLength {
+					log.Error(ErrDataLengthExceed)
+					return ErrDataLengthExceed
+				}
+
 				body = 0
 				f.data = make([]byte, f.DataLength())
 			}
@@ -224,7 +229,7 @@ func readLoop(inQueue chan<- *Frame, conn *net.TCPConn) (err error) {
 			body += m // body required length
 			i += m    // data from i: buf[i:n]
 
-			if body < f.DataLength() { // data not enough to body
+			if body < int(f.DataLength()) { // data not enough to body
 				break
 			}
 			// frame complete
@@ -259,6 +264,10 @@ func handleFrameLoop(outQueue chan<- *Frame, inQueue <-chan *Frame, h func(*Fram
 		}
 		if f.Version() != VersionPing {
 			f = h(f)
+			if f == nil {
+				log.Error(ErrFrameNil)
+				continue
+			}
 		}
 		outQueue <- f
 	}
@@ -304,7 +313,7 @@ func writeLoop(outQueue <-chan *Frame, conn *net.TCPConn, closed chan struct{}) 
 				close(closed)
 				return nil
 			}
-			if i+HeadLength+f.DataLength() > size {
+			if i+HeadLength+int(f.DataLength()) > size {
 				if _, err := conn.Write(buf[:i]); err != nil {
 					log.Error(err)
 					return err
