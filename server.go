@@ -9,25 +9,28 @@ import (
 	"github.com/arstd/log"
 )
 
-const ReadBufferSize = 1024 * 1024
-const WriteBufferSize = 1024 * 1024
-const Processors = 8
+const (
+	ReadBufferSize  = 4 * 1024 * 1024
+	WriteBufferSize = 2 * 1024 * 1024
+	QueueSize       = 4096
+	Processors      = 32
+)
 
 type Server struct {
 	Host string
 	Port int
-
-	ReadBufferSize  int // read buffer size of one connection
-	WriteBufferSize int // write buffer size of one connection
-
-	QueueSize  int // frame queue in/out size
-	Processors int // goroutine number of one connection
 
 	Fixed     [2]byte // default 'Ac' (0x41 0x63)
 	MaxLength uint32  // default 65536 (1<<16)
 
 	Version  byte // default 1 (0x01)
 	DataType byte // default 1 (0x01, json)
+
+	ReadBufferSize  int // read buffer size of one connection
+	WriteBufferSize int // write buffer size of one connection
+
+	QueueSize  int // frame queue in/out size
+	Processors int // goroutine number of one connection
 
 	Handle      func([]byte) []byte // one of handlers must not nil
 	HandleFrame func(*Frame) *Frame
@@ -56,6 +59,10 @@ func (s *Server) init() error {
 	}
 	if s.MaxLength == 0 {
 		s.MaxLength = MaxLength
+	}
+
+	if s.QueueSize == 0 {
+		s.QueueSize = QueueSize
 	}
 	if s.WriteBufferSize == 0 {
 		s.WriteBufferSize = WriteBufferSize
@@ -106,7 +113,7 @@ func (s *Server) Start() (err error) {
 func (s *Server) process(conn *net.TCPConn) {
 	log.Infof("accept connection from %s", conn.RemoteAddr())
 
-	c := NewConnect(conn, s.QueueSize, s.Handle, s.HandleFrame)
+	c := NewConnect(conn, int32(s.QueueSize), s.ReadBufferSize, s.WriteBufferSize, s.Handle, s.HandleFrame)
 
 	c.Process(s.Processors, s.close)
 	s.wg.Done()

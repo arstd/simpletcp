@@ -34,8 +34,11 @@ func runTCP(exit chan struct{}, wg *sync.WaitGroup) {
 		Host: "",
 		Port: 8090,
 
-		QueueSize:  32,
-		Processors: 1,
+		ReadBufferSize:  4 * 1024 * 1024,
+		WriteBufferSize: 2 * 1024 * 1024,
+
+		QueueSize:  4096,
+		Processors: 32,
 
 		Handle: func(data []byte) []byte { return data },
 	}

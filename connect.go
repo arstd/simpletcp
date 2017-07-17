@@ -4,6 +4,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/arstd/log"
@@ -14,22 +15,31 @@ type Connect struct {
 	wg     sync.WaitGroup
 	closed chan struct{} // can read after connect closed
 
+	readBufferSize, writeBufferSize int
+
+	queueSize         int32
 	inQueue, outQueue chan *Frame
-	inPlus, outPlus   int
-	inMinus, outMinus int
+	inPlus, inMinus   int32
+	outPlus, outMinus int32
 
 	handle      func([]byte) []byte // one of handlers must not nil
 	handleFrame func(*Frame) *Frame
 }
 
-func NewConnect(conn *net.TCPConn, size int, handle func([]byte) []byte, handleFrame func(*Frame) *Frame) *Connect {
+func NewConnect(conn *net.TCPConn, queueSize int32, readBufferSize, writeBufferSize int, handle func([]byte) []byte, handleFrame func(*Frame) *Frame) *Connect {
 	conn.SetNoDelay(true)
 
 	return &Connect{
-		conn:        conn,
-		inQueue:     make(chan *Frame, size),
-		outQueue:    make(chan *Frame, size),
-		closed:      make(chan struct{}),
+		conn:   conn,
+		closed: make(chan struct{}),
+
+		readBufferSize:  readBufferSize,
+		writeBufferSize: writeBufferSize,
+
+		queueSize: queueSize,
+		inQueue:   make(chan *Frame, queueSize),
+		outQueue:  make(chan *Frame, queueSize),
+
 		handle:      handle,
 		handleFrame: handleFrame,
 	}
@@ -37,6 +47,8 @@ func NewConnect(conn *net.TCPConn, size int, handle func([]byte) []byte, handleF
 
 func (c *Connect) Process(procNum int, closeSignal <-chan struct{}) {
 	go c.waitSignal(closeSignal)
+
+	go c.printQueueLen()
 
 	go c.readLoop()
 
@@ -74,9 +86,8 @@ func (c *Connect) Process(procNum int, closeSignal <-chan struct{}) {
 func (c *Connect) readLoop() (err error) {
 	defer c.conn.CloseRead()
 
-	size := 4 * 1024 * 1024
-	c.conn.SetReadBuffer(size)
-	buf := make([]byte, size)
+	c.conn.SetReadBuffer(c.readBufferSize)
+	buf := make([]byte, c.readBufferSize)
 
 	f := NewFrameHead() // an uncomplete frame
 	var head, body int  // readed head, readed body
@@ -134,7 +145,14 @@ func (c *Connect) readLoop() (err error) {
 			}
 			// frame complete
 
-			c.inQueue <- f
+			select {
+			case c.inQueue <- f:
+				atomic.AddInt32(&c.inPlus, 1)
+			default:
+				log.Warn("inQueue full")
+				c.inQueue <- f
+				atomic.AddInt32(&c.inPlus, 1)
+			}
 
 			// another frame
 			head = 0
@@ -162,6 +180,7 @@ func (c *Connect) handleFrameLoop() (err error) {
 			c.wg.Done()
 			return nil
 		}
+		atomic.AddInt32(&c.inMinus, 1)
 		if f.Version() != VersionPing {
 			f = c.handleFrame(f)
 			if f == nil {
@@ -169,7 +188,15 @@ func (c *Connect) handleFrameLoop() (err error) {
 				continue
 			}
 		}
-		c.outQueue <- f
+
+		select {
+		case c.outQueue <- f:
+			atomic.AddInt32(&c.outPlus, 1)
+		default:
+			log.Warn("outQueue full")
+			c.outQueue <- f
+			atomic.AddInt32(&c.outPlus, 1)
+		}
 	}
 }
 
@@ -188,19 +215,27 @@ func (c *Connect) handleLoop() (err error) {
 			c.wg.Done()
 			return nil
 		}
+		atomic.AddInt32(&c.inMinus, 1)
 		if f.Version() != VersionPing {
 			f.SetDataWithLength(c.handle(f.data))
 		}
-		c.outQueue <- f
+
+		select {
+		case c.outQueue <- f:
+			atomic.AddInt32(&c.outPlus, 1)
+		default:
+			log.Warn("outQueue full")
+			c.outQueue <- f
+			atomic.AddInt32(&c.outPlus, 1)
+		}
 	}
 }
 
 func (c *Connect) writeLoop() (err error) {
 	defer c.conn.CloseWrite()
 
-	size := 1024 * 1024
-	c.conn.SetWriteBuffer(size)
-	buf := make([]byte, size)
+	c.conn.SetWriteBuffer(c.writeBufferSize)
+	buf := make([]byte, c.writeBufferSize)
 	var i int
 	var f *Frame
 	var ok bool
@@ -213,7 +248,8 @@ func (c *Connect) writeLoop() (err error) {
 				close(c.closed)
 				return nil
 			}
-			if i+HeadLength+int(f.DataLength()) > size {
+			atomic.AddInt32(&c.outMinus, 1)
+			if i+HeadLength+int(f.DataLength()) > c.writeBufferSize {
 				if _, err := c.conn.Write(buf[:i]); err != nil {
 					log.Error(err)
 					return err
@@ -248,5 +284,32 @@ func (c *Connect) waitSignal(closeSignal <-chan struct{}) {
 		log.Errorn(c.conn.CloseRead())
 	case <-c.closed: // connect closed, must exit this method
 		// exit go routine
+	}
+}
+
+func (c *Connect) printQueueLen() {
+	timer := time.NewTicker(1 * time.Second)
+	for {
+		select {
+		case <-c.closed:
+			timer.Stop()
+			return
+		case <-timer.C:
+			inPlus := atomic.SwapInt32(&c.inPlus, 0)
+			inMinus := atomic.SwapInt32(&c.inMinus, 0)
+			outPlus := atomic.SwapInt32(&c.outPlus, 0)
+			outMinus := atomic.SwapInt32(&c.outMinus, 0)
+
+			in, out := inPlus-inMinus, outPlus-outMinus
+
+			p := log.Infof
+			if in == c.queueSize || out == c.queueSize {
+				p = log.Errorf
+			} else if in*5 > c.queueSize*4 || out*5 > c.queueSize*4 {
+				p = log.Warnf
+			}
+			p("in: %d - %d = %d, out: %d - %d = %d, size: %d",
+				inPlus, inMinus, in, outPlus, outMinus, out, c.queueSize)
+		}
 	}
 }
