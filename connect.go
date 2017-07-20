@@ -235,43 +235,54 @@ func (c *Connect) writeLoop() (err error) {
 	defer c.conn.CloseWrite()
 
 	c.conn.SetWriteBuffer(c.writeBufferSize)
+
 	buf := make([]byte, c.writeBufferSize)
 	var i int
 	var f *Frame
 	var ok bool
+	timeout := 100 * time.Microsecond
+	timer := time.NewTimer(timeout)
 	for {
 		select {
 		case f, ok = <-c.outQueue:
-			if !ok {
-				log.Trace("close write")
-				log.Errorn(c.conn.CloseWrite())
-				close(c.closed)
-				return nil
-			}
-			atomic.AddInt32(&c.outMinus, 1)
-			if i+HeadLength+int(f.DataLength()) > c.writeBufferSize {
-				if _, err := c.conn.Write(buf[:i]); err != nil {
-					log.Error(err)
-					return err
-				}
-				i = 0
-			}
-			i += copy(buf[i:], f.head)
-			i += copy(buf[i:], f.data)
-
 		default:
-			if i == 0 { // buf no data
-				time.Sleep(100 * time.Microsecond)
-				break
-			}
-			if i > 0 { // buf not full but no frame
-				if _, err := c.conn.Write(buf[:i]); err != nil {
-					log.Error(err)
-					return err
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
 				}
-				i = 0
+			}
+			timer.Reset(timeout)
+			select {
+			case f, ok = <-c.outQueue:
+			case <-timer.C:
+				if i > 0 { // buf not full but no frame
+					if _, err := c.conn.Write(buf[:i]); err != nil {
+						log.Error(err)
+						return err
+					}
+					i = 0
+				}
+				continue // goto for next iterator
 			}
 		}
+
+		if !ok {
+			log.Trace("close write")
+			log.Errorn(c.conn.CloseWrite())
+			close(c.closed)
+			return nil
+		}
+		atomic.AddInt32(&c.outMinus, 1)
+		if i+HeadLength+int(f.DataLength()) > c.writeBufferSize {
+			if _, err := c.conn.Write(buf[:i]); err != nil {
+				log.Error(err)
+				return err
+			}
+			i = 0
+		}
+		i += copy(buf[i:], f.head)
+		i += copy(buf[i:], f.data)
 	}
 }
 
