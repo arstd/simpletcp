@@ -300,6 +300,11 @@ func (c *Connect) printQueueLen() {
 			outPlus := atomic.SwapInt32(&c.outPlus, 0)
 			outMinus := atomic.SwapInt32(&c.outMinus, 0)
 
+			if inPlus == 0 && outPlus == 0 &&
+				inMinus == 0 && outMinus == 0 {
+				continue
+			}
+
 			in, out := inPlus-inMinus, outPlus-outMinus
 
 			p := log.Infof
@@ -308,8 +313,8 @@ func (c *Connect) printQueueLen() {
 			} else if in*5 > c.queueSize*4 || out*5 > c.queueSize*4 {
 				p = log.Warnf
 			}
-			p("in: %d - %d = %d, out: %d - %d = %d, size: %d",
-				inPlus, inMinus, in, outPlus, outMinus, out, c.queueSize)
+			p("connect: %s,\tin: %d - %d = %d,\tout: %d - %d = %d",
+				c.conn.RemoteAddr(), inPlus, inMinus, in, outPlus, outMinus, out)
 		}
 	}
 }
