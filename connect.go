@@ -86,7 +86,6 @@ func (c *Connect) Process(procNum int, closeSignal <-chan struct{}) {
 func (c *Connect) readLoop() (err error) {
 	defer c.conn.CloseRead()
 
-	c.conn.SetReadBuffer(c.readBufferSize)
 	buf := make([]byte, c.readBufferSize)
 
 	f := NewFrameHead() // an uncomplete frame
@@ -234,8 +233,6 @@ func (c *Connect) handleLoop() (err error) {
 func (c *Connect) writeLoop() (err error) {
 	defer c.conn.CloseWrite()
 
-	c.conn.SetWriteBuffer(c.writeBufferSize)
-
 	buf := make([]byte, c.writeBufferSize)
 	var i int
 	var f *Frame
@@ -245,7 +242,9 @@ func (c *Connect) writeLoop() (err error) {
 	for {
 		select {
 		case f, ok = <-c.outQueue:
+
 		default:
+
 			if !timer.Stop() {
 				select {
 				case <-timer.C:
@@ -253,9 +252,12 @@ func (c *Connect) writeLoop() (err error) {
 				}
 			}
 			timer.Reset(timeout)
+
 			select {
 			case f, ok = <-c.outQueue:
+
 			case <-timer.C:
+
 				if i > 0 { // buf not full but no frame
 					if _, err := c.conn.Write(buf[:i]); err != nil {
 						log.Error(err)
