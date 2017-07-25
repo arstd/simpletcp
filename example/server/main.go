@@ -17,6 +17,8 @@ func handle(data []byte) []byte {
 }
 
 func main() {
+	log.SetLevel(log.Ltrace)
+
 	var exit = make(chan struct{})
 	var wg sync.WaitGroup
 
@@ -34,11 +36,11 @@ func runTCP(exit chan struct{}, wg *sync.WaitGroup) {
 		Host: "",
 		Port: 8090,
 
-		ReadBufferSize:  4 * 1024 * 1024,
-		WriteBufferSize: 2 * 1024 * 1024,
+		ReadBufferSize:  1024 * 1024,
+		WriteBufferSize: 256 * 1024,
 
 		QueueSize:  4096,
-		Processors: 32,
+		Processors: 8,
 
 		Handle: func(data []byte) []byte { return data },
 	}
