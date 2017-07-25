@@ -228,36 +228,20 @@ func (c *Connect) writeLoop() (err error) {
 	var i int
 	var f *Frame
 	var ok bool
-	timeout := 100 * time.Microsecond
-	timer := time.NewTimer(timeout)
 	for {
 		select {
 		case f, ok = <-c.outQueue:
 
 		default:
-
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
+			if i > 0 { // buf not full but no frame
+				if _, err := c.conn.Write(buf[:i]); err != nil {
+					log.Error(err)
+					return err
 				}
+				i = 0
 			}
-			timer.Reset(timeout)
 
-			select {
-			case f, ok = <-c.outQueue:
-
-			case <-timer.C:
-
-				if i > 0 { // buf not full but no frame
-					if _, err := c.conn.Write(buf[:i]); err != nil {
-						log.Error(err)
-						return err
-					}
-					i = 0
-				}
-				continue // goto for next iterator
-			}
+			f, ok = <-c.outQueue
 		}
 
 		if !ok {
