@@ -38,7 +38,12 @@ type Frame struct {
 
 // NewFrameHead return frame with blank head
 func NewFrameHead() *Frame {
-	return &Frame{head: make([]byte, 16)}
+	return getFrame()
+}
+
+func (f *Frame) Recycle() {
+	f.data = nil
+	putFrame(f)
 }
 
 func NewFrameDefault() *Frame {

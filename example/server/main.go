@@ -42,7 +42,7 @@ func runTCP(exit chan struct{}, wg *sync.WaitGroup) {
 		QueueSize:  4096,
 		Processors: 8,
 
-		Handle: func(data []byte) []byte { return data },
+		Handle: handle,
 	}
 	go func() {
 		log.Printf("tcp server is listening at %s:%d", srv.Host, srv.Port)

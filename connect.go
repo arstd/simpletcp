@@ -259,6 +259,7 @@ func (c *Connect) writeLoop() (err error) {
 		}
 		i += copy(buf[i:], f.head)
 		i += copy(buf[i:], f.data)
+		f.Recycle()
 	}
 }
 
