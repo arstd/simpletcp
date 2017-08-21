@@ -65,7 +65,7 @@ func (bp *BodyPool) Get(l int) []byte {
 		return bs
 	default:
 		log.Info("body pool empty")
-		return make([]byte, maxBytes/10)
+		return make([]byte, l)
 	}
 }
 
