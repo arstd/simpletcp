@@ -2,7 +2,7 @@ package simpletcp
 
 import "github.com/arstd/log"
 
-const poolSize = 100
+const poolSize = 4096
 
 // frame pool, head length fixed
 
@@ -25,7 +25,7 @@ func (fp *FramePool) Get() *Frame {
 	case f := <-fp.c:
 		return f
 	default:
-		log.Warn("frame pool empty")
+		log.Info("frame pool empty")
 		return newFrameHead()
 	}
 }
@@ -34,7 +34,7 @@ func (fp *FramePool) Put(f *Frame) {
 	select {
 	case fp.c <- f:
 	default:
-		log.Warn("frame pool full")
+		log.Info("frame pool full")
 	}
 }
 
@@ -64,7 +64,7 @@ func (bp *BodyPool) Get(l int) []byte {
 		}
 		return bs
 	default:
-		log.Warn("body pool empty")
+		log.Info("body pool empty")
 		return make([]byte, maxBytes/10)
 	}
 }
@@ -73,6 +73,6 @@ func (bp *BodyPool) Put(bs []byte) {
 	select {
 	case bp.c <- bs:
 	default:
-		log.Warn("body pool full")
+		log.Info("body pool full")
 	}
 }
