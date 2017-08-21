@@ -60,6 +60,7 @@ func (bp *BodyPool) Get(l int) []byte {
 	select {
 	case bs := <-bp.c:
 		if len(bs) < l {
+			log.Info("body len not enough")
 			return make([]byte, l)
 		}
 		return bs

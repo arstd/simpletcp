@@ -64,7 +64,7 @@ func (c *Connect) readLoop() (err error) {
 			}
 
 			// read body
-			m := copy(f.Body, buf[i:n])
+			m := copy(f.Body[body:], buf[i:n])
 			body += m // body required length
 			i += m    // data from i: buf[i:n]
 
