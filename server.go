@@ -24,7 +24,7 @@ type Server struct {
 	MaxLength uint32  // default 65536 (1<<16)
 
 	Version  byte // default 1 (0x01)
-	DataType byte // default 1 (0x01, json)
+	BodyType byte // default 1 (0x01, json)
 
 	ReadBufferSize  int // read buffer size of one connection
 	WriteBufferSize int // write buffer size of one connection
@@ -54,8 +54,8 @@ func (s *Server) init() error {
 	if s.Version == 0 {
 		s.Version = Version1
 	}
-	if s.DataType == 0 {
-		s.DataType = DataTypeJSON
+	if s.BodyType == 0 {
+		s.BodyType = BodyTypeJSON
 	}
 	if s.MaxLength == 0 {
 		s.MaxLength = MaxLength

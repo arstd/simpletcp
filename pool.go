@@ -1,39 +1,78 @@
 package simpletcp
 
-import "sync"
+import "github.com/arstd/log"
+
+const poolSize = 100
 
 // frame pool, head length fixed
 
-var framePool = sync.Pool{
-	New: func() interface{} {
-		return &Frame{head: make([]byte, 16)}
-	},
+var fp = newFramePool(poolSize)
+
+type FramePool struct {
+	c chan *Frame
 }
 
-func getFrame() *Frame {
-	return framePool.Get().(*Frame)
+func newFramePool(size int) *FramePool {
+	fp := &FramePool{c: make(chan *Frame, size)}
+	for i := 0; i < size; i++ {
+		fp.c <- newFrameHead()
+	}
+	return fp
 }
 
-func putFrame(f *Frame) {
-	f.data = nil
-	framePool.Put(f)
+func (fp *FramePool) Get() *Frame {
+	select {
+	case f := <-fp.c:
+		return f
+	default:
+		log.Warn("frame pool empty")
+		return newFrameHead()
+	}
+}
+
+func (fp *FramePool) Put(f *Frame) {
+	select {
+	case fp.c <- f:
+	default:
+		log.Warn("frame pool full")
+	}
 }
 
 // body pool, body length is volatile
-var bodyPool = sync.Pool{
-	New: func() interface{} {
-		return make([]byte, 256)
-	},
+
+var bp = newBodyPool(poolSize)
+
+const maxBytes = 4096
+
+type BodyPool struct {
+	c chan []byte
 }
 
-func getBody(l int) []byte {
-	bs := bodyPool.Get().([]byte)
-	if len(bs) < l {
-		bs = make([]byte, l)
+func newBodyPool(size int) *BodyPool {
+	bp := &BodyPool{c: make(chan []byte, size)}
+	for i := 0; i < size; i++ {
+		bp.c <- make([]byte, maxBytes/10)
 	}
-	return bs
+	return bp
 }
 
-func putBody(bs []byte) {
-	bodyPool.Put(bs)
+func (bp *BodyPool) Get(l int) []byte {
+	select {
+	case bs := <-bp.c:
+		if len(bs) < l {
+			return make([]byte, l)
+		}
+		return bs
+	default:
+		log.Warn("body pool empty")
+		return make([]byte, maxBytes/10)
+	}
+}
+
+func (bp *BodyPool) Put(bs []byte) {
+	select {
+	case bp.c <- bs:
+	default:
+		log.Warn("body pool full")
+	}
 }

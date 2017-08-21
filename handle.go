@@ -50,7 +50,7 @@ func (c *Connect) handleLoop() (err error) {
 			return nil
 		}
 		if f.Version() != VersionPing {
-			f.SetDataWithLength(c.handle(f.data))
+			f.SetBodyWithLength(c.handle(f.Body))
 		}
 
 		select {

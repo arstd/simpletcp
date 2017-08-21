@@ -13,7 +13,7 @@ func (c *Connect) readLoop() (err error) {
 
 	buf := make([]byte, c.readBufferSize)
 
-	f := NewFrameHead()        // an uncomplete frame
+	f := NewFrame()            // an uncomplete frame
 	var head, body int         // readed head, readed body
 	timeout := 5 * time.Minute // close conn if 5m no data
 	for {
@@ -53,22 +53,22 @@ func (c *Connect) readLoop() (err error) {
 					log.Error(ErrFixedHead)
 					return ErrFixedHead
 				}
-				dl := f.DataLength()
+				dl := f.BodyLength()
 				if dl > MaxLength {
-					log.Error(ErrDataLengthExceed)
-					return ErrDataLengthExceed
+					log.Error(ErrBodyLengthExceed)
+					return ErrBodyLengthExceed
 				}
 
 				body = 0
-				f.data = make([]byte, f.DataLength())
+				f.NewBody(int(dl))
 			}
 
 			// read body
-			m := copy(f.data[body:], buf[i:n])
+			m := copy(f.Body, buf[i:n])
 			body += m // body required length
 			i += m    // data from i: buf[i:n]
 
-			if body < int(f.DataLength()) { // data not enough to body
+			if body < int(f.BodyLength()) { // data not enough to body
 				break
 			}
 			// frame complete
@@ -82,7 +82,7 @@ func (c *Connect) readLoop() (err error) {
 
 			// another frame
 			head = 0
-			f = NewFrameHead()
+			f = NewFrame()
 
 			if i >= n {
 				break

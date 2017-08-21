@@ -22,7 +22,7 @@ func main() {
 	flag.StringVar(&addr, "a", "127.0.0.1:8090", "acserver tcp address")
 	flag.IntVar(&times, "t", 20e4, "send times of one connection")
 	flag.IntVar(&conns, "c", 32, "connection numbers")
-	flag.Int64Var(&rest, "r", 19e4, "rest time(ns) before send another data")
+	flag.Int64Var(&rest, "r", 19e4, "rest time(ns) before send another body")
 	flag.Parse()
 
 	log.Infof("addr=%s conns=%d times=%d rest=%d", addr, conns, times, rest)
@@ -50,15 +50,15 @@ func single() {
 
 	f := simpletcp.NewFrameDefault()
 	f.SetMessageId(15)
-	f.SetDataWithLength(data)
+	f.SetBodyWithLength(body)
 
 	log.Fataln(tcpConn.Write(f.Head()))
-	log.Fataln(tcpConn.Write(f.Data()))
+	log.Fataln(tcpConn.Write(f.Body))
 
 	// f = simpletcp.NewFrameDefault()
 	log.Debug(io.ReadFull(tcpConn, f.Head()))
-	f.SetData(make([]byte, f.DataLength()))
-	log.Debug(io.ReadFull(tcpConn, f.Data()))
+	f.SetBody(make([]byte, f.BodyLength()))
+	log.Debug(io.ReadFull(tcpConn, f.Body))
 
 	log.Debug(f.String())
 }
@@ -84,13 +84,13 @@ func send(count uint32) {
 		tcpConn.SetWriteBuffer(4096 * 1024)
 		for i := uint32(1); i <= count; i++ {
 			f.SetMessageId(i)
-			// f.SetDataWithLength([]byte("hello"))
-			f.SetDataWithLength(data)
+			// f.SetBodyWithLength([]byte("hello"))
+			f.SetBodyWithLength(body)
 
 			reserved := uint32(time.Now().UnixNano() / 1000)
 			binary.BigEndian.PutUint32(f.Reserved(), reserved)
 			log.Fataln(tcpConn.Write(f.Head()))
-			log.Fataln(tcpConn.Write(f.Data()))
+			log.Fataln(tcpConn.Write(f.Body))
 
 			// log.Debug(f.String())
 			time.Sleep(time.Duration(rest))
@@ -99,13 +99,13 @@ func send(count uint32) {
 	}()
 
 	var total int64
-	recv := simpletcp.NewFrameHead()
+	recv := simpletcp.NewFrame()
 	buf := make([]byte, simpletcp.MaxLength)
 	tcpConn.SetReadBuffer(4096 * 1024)
 	for i := uint32(1); i <= count; i++ {
 		log.Fataln(io.ReadFull(tcpConn, recv.Head()))
-		recv.SetData(buf[:recv.DataLength()])
-		log.Fataln(io.ReadFull(tcpConn, recv.Data()))
+		recv.SetBody(buf[:recv.BodyLength()])
+		log.Fataln(io.ReadFull(tcpConn, recv.Body))
 
 		reserved := binary.BigEndian.Uint32(recv.Reserved())
 
@@ -114,7 +114,7 @@ func send(count uint32) {
 		total += delta
 
 		if i%(count/10) == 0 {
-			log.Debugf("%d: %d %s, %dus", i, recv.MessageId(), recv.Data(), delta)
+			log.Debugf("%d: %d %s, %dus", i, recv.MessageId(), recv.Body, delta)
 		}
 	}
 
@@ -125,4 +125,4 @@ func send(count uint32) {
 		time.Duration(total*1000)/time.Duration(count))
 }
 
-var data = []byte("hello")
+var body = []byte("hello")

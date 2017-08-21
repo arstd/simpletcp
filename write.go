@@ -31,7 +31,7 @@ func (c *Connect) writeLoop() (err error) {
 			close(c.closed)
 			return nil
 		}
-		if i+HeadLength+int(f.DataLength()) > c.writeBufferSize {
+		if i+HeadLength+int(f.BodyLength()) > c.writeBufferSize {
 			if _, err := c.conn.Write(buf[:i]); err != nil {
 				log.Error(err)
 				return err
@@ -39,7 +39,7 @@ func (c *Connect) writeLoop() (err error) {
 			i = 0
 		}
 		i += copy(buf[i:], f.head)
-		i += copy(buf[i:], f.data)
+		i += copy(buf[i:], f.Body)
 		f.Recycle()
 	}
 }
