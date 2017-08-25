@@ -17,7 +17,7 @@ func handle(data []byte) []byte {
 }
 
 func main() {
-	log.SetLevel(log.Ltrace)
+	log.SetLevel(log.Linfo)
 
 	var exit = make(chan struct{})
 	var wg sync.WaitGroup

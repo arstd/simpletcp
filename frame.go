@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"reflect"
+	"unsafe"
 )
 
 var (
@@ -51,10 +53,14 @@ func (f *Frame) NewBody(l int) {
 }
 
 func (f *Frame) Recycle() {
+	f.RecycleBody()
+	fp.Put(f)
+}
+
+func (f *Frame) RecycleBody() {
 	bp.Put(f.underlying)
 	f.underlying = nil
 	f.Body = nil
-	fp.Put(f)
 }
 
 func NewFrameDefault() *Frame {
@@ -80,11 +86,19 @@ func (f *Frame) SetReserved(reserved uint32) {
 
 func (f *Frame) SetBody(body []byte) {
 	f.Body = body
+	if len(body) == cap(body) {
+		f.underlying = body
+	} else {
+		uh := (*reflect.SliceHeader)(unsafe.Pointer(&f.underlying))
+		uh.Data = uintptr(unsafe.Pointer(&body))
+		uh.Cap = cap(body)
+		uh.Len = cap(body)
+	}
 }
 
 func (f *Frame) SetBodyWithLength(body []byte) {
 	binary.BigEndian.PutUint32(f.head[8:12], uint32(len(body)))
-	f.Body = body
+	f.SetBody(body)
 }
 
 func (f *Frame) Head() []byte {

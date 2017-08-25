@@ -1,6 +1,10 @@
 package simpletcp
 
-import "github.com/arstd/log"
+import (
+	"unsafe"
+
+	"github.com/arstd/log"
+)
 
 func (c *Connect) handleFrameLoop() (err error) {
 	defer func() {
@@ -9,27 +13,34 @@ func (c *Connect) handleFrameLoop() (err error) {
 			go c.handleFrameLoop()
 		}
 	}()
-	var f *Frame
+	var in, out *Frame
 	var ok bool
 	for {
-		if f, ok = <-c.inQueue; !ok {
+		if in, ok = <-c.inQueue; !ok {
 			log.Trace("exit hand loop")
 			c.wg.Done()
 			return nil
 		}
-		if f.Version() != VersionPing {
-			f = c.handleFrame(f)
-			if f == nil {
+		if in.Version() != VersionPing {
+			out = c.handleFrame(in)
+			if out == nil {
 				log.Error(ErrFrameNil)
 				continue
+			}
+			if unsafe.Pointer(&out.Body) != unsafe.Pointer(&in.Body) {
+				if unsafe.Pointer(out) != unsafe.Pointer(in) {
+					in.Recycle()
+				} else {
+					in.RecycleBody()
+				}
 			}
 		}
 
 		select {
-		case c.outQueue <- f:
+		case c.outQueue <- out:
 		default:
 			log.Warn("outQueue full")
-			c.outQueue <- f
+			c.outQueue <- out
 		}
 	}
 }
@@ -42,6 +53,7 @@ func (c *Connect) handleLoop() (err error) {
 		}
 	}()
 	var f *Frame
+	var out []byte
 	var ok bool
 	for {
 		if f, ok = <-c.inQueue; !ok {
@@ -50,7 +62,11 @@ func (c *Connect) handleLoop() (err error) {
 			return nil
 		}
 		if f.Version() != VersionPing {
-			f.SetBodyWithLength(c.handle(f.Body))
+			out = c.handle(f.Body)
+			if unsafe.Pointer(&out) != unsafe.Pointer(&f.Body) {
+				f.RecycleBody()
+			}
+			f.SetBodyWithLength(out)
 		}
 
 		select {

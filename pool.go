@@ -1,6 +1,10 @@
 package simpletcp
 
-import "github.com/arstd/log"
+import (
+	"sync/atomic"
+
+	"github.com/arstd/log"
+)
 
 const poolSize = 4096
 
@@ -42,16 +46,22 @@ func (fp *FramePool) Put(f *Frame) {
 
 var bp = newBodyPool(poolSize)
 
-const maxBytes = 4096
-
 type BodyPool struct {
-	c chan []byte
+	c     chan []byte
+	total uint64
+	count uint64
 }
 
 func newBodyPool(size int) *BodyPool {
-	bp := &BodyPool{c: make(chan []byte, size)}
+	const l = 64
+
+	bp := &BodyPool{
+		c:     make(chan []byte, size),
+		count: uint64(size),
+		total: uint64(size) * l,
+	}
 	for i := 0; i < size; i++ {
-		bp.c <- make([]byte, maxBytes/10)
+		bp.c <- make([]byte, l)
 	}
 	return bp
 }
@@ -71,6 +81,15 @@ func (bp *BodyPool) Get(l int) []byte {
 }
 
 func (bp *BodyPool) Put(bs []byte) {
+	l := len(bs)
+	atomic.AddUint64(&bp.count, 1)
+	atomic.AddUint64(&bp.total, uint64(l))
+
+	avg := atomic.LoadUint64(&bp.total) / atomic.LoadUint64(&bp.count)
+	if l*4 < int(avg) || l > int(avg*4) {
+		return
+	}
+
 	select {
 	case bp.c <- bs:
 	default:
