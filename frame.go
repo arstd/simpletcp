@@ -4,8 +4,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"reflect"
-	"unsafe"
+
+	"github.com/arstd/log"
 )
 
 var (
@@ -58,7 +58,9 @@ func (f *Frame) Recycle() {
 }
 
 func (f *Frame) RecycleBody() {
-	bp.Put(f.underlying)
+	if f.underlying != nil {
+		bp.Put(f.underlying)
+	}
 	f.underlying = nil
 	f.Body = nil
 }
@@ -87,13 +89,20 @@ func (f *Frame) SetReserved(reserved uint32) {
 func (f *Frame) SetBody(body []byte) {
 	f.Body = body
 	if len(body) == cap(body) {
+		log.Tracef("slice (%p len=%d, cap=%d)", &body[0], len(body), cap(body))
 		f.underlying = body
-	} else {
-		uh := (*reflect.SliceHeader)(unsafe.Pointer(&f.underlying))
-		uh.Data = uintptr(unsafe.Pointer(&body))
-		uh.Cap = cap(body)
-		uh.Len = cap(body)
 	}
+	// unsafe code, panic:
+	// fatal error: sweep increased allocation count
+
+	// if len(body) < cap(body) {
+	// 	uh := (*reflect.SliceHeader)(unsafe.Pointer(&f.underlying))
+	// 	uh.Data = uintptr(unsafe.Pointer(&body))
+	// 	uh.Cap = cap(body)
+	// 	uh.Len = cap(body)
+	// 	log.Tracef("slice underlying %p(len=%d, cap=%d) from slice %p(len=%d, cap=%d)",
+	// 		&f.underlying[0], len(f.underlying), cap(f.underlying), &body[0], len(body), cap(body))
+	// }
 }
 
 func (f *Frame) SetBodyWithLength(body []byte) {

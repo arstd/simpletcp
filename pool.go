@@ -18,15 +18,13 @@ type FramePool struct {
 
 func newFramePool(size int) *FramePool {
 	fp := &FramePool{c: make(chan *Frame, size)}
-	for i := 0; i < size; i++ {
-		fp.c <- newFrameHead()
-	}
 	return fp
 }
 
 func (fp *FramePool) Get() *Frame {
 	select {
 	case f := <-fp.c:
+		log.Tracef("get frame %p", f)
 		return f
 	default:
 		log.Info("frame pool empty")
@@ -37,8 +35,9 @@ func (fp *FramePool) Get() *Frame {
 func (fp *FramePool) Put(f *Frame) {
 	select {
 	case fp.c <- f:
+		log.Tracef("put frame %p", f)
 	default:
-		log.Info("frame pool full")
+		log.Debug("frame pool full")
 	}
 }
 
@@ -50,29 +49,33 @@ type BodyPool struct {
 	c     chan []byte
 	total uint64
 	count uint64
+
+	hit  uint64
+	miss uint64
 }
 
 func newBodyPool(size int) *BodyPool {
-	const l = 64
-
 	bp := &BodyPool{
 		c:     make(chan []byte, size),
-		count: uint64(size),
-		total: uint64(size) * l,
-	}
-	for i := 0; i < size; i++ {
-		bp.c <- make([]byte, l)
+		count: 1,
+		total: 5,
 	}
 	return bp
 }
 
 func (bp *BodyPool) Get(l int) []byte {
+	atomic.AddUint64(&bp.count, 1)
+	atomic.AddUint64(&bp.total, uint64(l))
+
 	select {
 	case bs := <-bp.c:
 		if len(bs) < l {
-			log.Info("body len not enough")
+			miss := atomic.AddUint64(&bp.miss, 1)
+			log.Debugf("miss %d: body len not enough, require %d, got %d", miss, l, len(bs))
 			return make([]byte, l)
 		}
+		hit := atomic.AddUint64(&bp.hit, 1)
+		log.Tracef("hit %d: get body %p", hit, &bs[0])
 		return bs
 	default:
 		log.Info("body pool empty")
@@ -82,17 +85,15 @@ func (bp *BodyPool) Get(l int) []byte {
 
 func (bp *BodyPool) Put(bs []byte) {
 	l := len(bs)
-	atomic.AddUint64(&bp.count, 1)
-	atomic.AddUint64(&bp.total, uint64(l))
-
 	avg := atomic.LoadUint64(&bp.total) / atomic.LoadUint64(&bp.count)
-	if l*4 < int(avg) || l > int(avg*4) {
+	if l < int(avg>>1) || l > int(avg<<3) {
 		return
 	}
 
 	select {
 	case bp.c <- bs:
+		log.Tracef("put body %p", &bs[0])
 	default:
-		log.Info("body pool full")
+		log.Debug("body pool full")
 	}
 }

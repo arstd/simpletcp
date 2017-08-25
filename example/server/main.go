@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"math"
+	"math/rand"
 	"os"
 	"os/signal"
 	"sync"
@@ -11,13 +13,16 @@ import (
 	"github.com/arstd/simpletcp"
 )
 
-func handle(data []byte) []byte {
-	log.Debug(data)
-	return bytes.ToUpper(data)
+func handle(data []byte) (out []byte) {
+	half := int(math.Ceil(float64(len(data)) / 2))
+	start := rand.Intn(half)
+	out = bytes.ToUpper(data)[start : start+1+rand.Intn(half)]
+	log.Debug(data, out)
+	return out
 }
 
 func main() {
-	log.SetLevel(log.Linfo)
+	log.SetLevel(log.Ltrace)
 
 	var exit = make(chan struct{})
 	var wg sync.WaitGroup

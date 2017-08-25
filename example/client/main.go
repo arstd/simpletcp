@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"flag"
 	"io"
+	"math/rand"
 	"net"
 	"time"
 
@@ -85,7 +86,7 @@ func send(count uint32) {
 		for i := uint32(1); i <= count; i++ {
 			f.SetMessageId(i)
 			// f.SetBodyWithLength([]byte("hello"))
-			f.SetBodyWithLength(body)
+			f.SetBodyWithLength(body[:1+rand.Intn(len(body))])
 
 			reserved := uint32(time.Now().UnixNano() / 1000)
 			binary.BigEndian.PutUint32(f.Reserved(), reserved)
@@ -125,4 +126,4 @@ func send(count uint32) {
 		time.Duration(total*1000)/time.Duration(count))
 }
 
-var body = []byte("hello")
+var body = []byte("hellohellohellohellohellohellohellohellohellohellohellohello")
