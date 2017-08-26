@@ -27,7 +27,7 @@ func (fp *FramePool) Get() *Frame {
 		log.Tracef("get frame %p", f)
 		return f
 	default:
-		log.Info("frame pool empty")
+		log.Debug("frame pool empty")
 		return newFrameHead()
 	}
 }
@@ -78,7 +78,7 @@ func (bp *BodyPool) Get(l int) []byte {
 		log.Tracef("hit %d: get body %p", hit, &bs[0])
 		return bs
 	default:
-		log.Info("body pool empty")
+		log.Debug("body pool empty")
 		return make([]byte, l)
 	}
 }
