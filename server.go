@@ -10,10 +10,8 @@ import (
 )
 
 const (
-	ReadBufferSize  = 4 * 1024 * 1024
-	WriteBufferSize = 2 * 1024 * 1024
-	QueueSize       = 4096
-	Processors      = 32
+	QueueSize  = 4096
+	Processors = 32
 )
 
 type Server struct {
@@ -25,9 +23,6 @@ type Server struct {
 
 	Version  byte // default 1 (0x01)
 	BodyType byte // default 1 (0x01, json)
-
-	ReadBufferSize  int // read buffer size of one connection
-	WriteBufferSize int // write buffer size of one connection
 
 	QueueSize  int // frame queue in/out size
 	Processors int // goroutine number of one connection
@@ -63,12 +58,6 @@ func (s *Server) init() error {
 
 	if s.QueueSize == 0 {
 		s.QueueSize = QueueSize
-	}
-	if s.WriteBufferSize == 0 {
-		s.WriteBufferSize = WriteBufferSize
-	}
-	if s.ReadBufferSize == 0 {
-		s.ReadBufferSize = ReadBufferSize
 	}
 	if s.Processors == 0 {
 		s.Processors = Processors
@@ -113,7 +102,7 @@ func (s *Server) Start() (err error) {
 func (s *Server) process(conn *net.TCPConn) {
 	log.Infof("accept connection from %s", conn.RemoteAddr())
 
-	c := NewConnect(conn, int32(s.QueueSize), s.ReadBufferSize, s.WriteBufferSize, s.Handle, s.HandleFrame)
+	c := NewConnect(conn, int32(s.QueueSize), s.Handle, s.HandleFrame)
 
 	c.Process(s.Processors, s.close)
 	s.wg.Done()

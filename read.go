@@ -11,7 +11,7 @@ import (
 func (c *Connect) readLoop() (err error) {
 	defer c.conn.CloseRead()
 
-	buf := make([]byte, c.readBufferSize)
+	buf := make([]byte, startBufSize)
 
 	f := NewFrame()            // an uncomplete frame
 	var head, body int         // readed head, readed body
@@ -87,6 +87,24 @@ func (c *Connect) readLoop() (err error) {
 			if i >= n {
 				break
 			}
+		}
+
+		// grow: if read full buffer and buffer length less than max buffer size
+		// shrink: if read half buffer and buffer length more than min buffer size
+		if n == len(buf) && len(buf) < maxBufSize {
+			grow := len(buf) * 2
+			if grow > maxBufSize {
+				grow = maxBufSize
+			}
+			log.Infof("read buffer grow from %d to %d", len(buf), grow)
+			buf = make([]byte, grow)
+		} else if n < len(buf)/2 && len(buf) > minBufSize {
+			shrink := len(buf) / 2
+			if shrink < minBufSize {
+				shrink = minBufSize
+			}
+			log.Infof("read buffer shrink from %d to %d", len(buf), shrink)
+			buf = make([]byte, shrink)
 		}
 	}
 }

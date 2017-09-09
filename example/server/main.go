@@ -22,7 +22,7 @@ func handle(data []byte) (out []byte) {
 }
 
 func main() {
-	log.SetLevel(log.Ltrace)
+	log.SetLevel(log.Linfo)
 
 	var exit = make(chan struct{})
 	var wg sync.WaitGroup
@@ -40,9 +40,6 @@ func runTCP(exit chan struct{}, wg *sync.WaitGroup) {
 	srv := &simpletcp.Server{
 		Host: "",
 		Port: 8090,
-
-		ReadBufferSize:  1024 * 1024,
-		WriteBufferSize: 256 * 1024,
 
 		QueueSize:  4096,
 		Processors: 8,

@@ -7,12 +7,17 @@ import (
 	"github.com/arstd/log"
 )
 
+// For controlling dynamic buffer sizes.
+const (
+	startBufSize = 512
+	minBufSize   = 128
+	maxBufSize   = 65536
+)
+
 type Connect struct {
 	conn   *net.TCPConn
 	wg     sync.WaitGroup
 	closed chan struct{} // can read after connect closed
-
-	readBufferSize, writeBufferSize int
 
 	queueSize         int32
 	inQueue, outQueue chan *Frame
@@ -21,15 +26,12 @@ type Connect struct {
 	handleFrame func(*Frame) *Frame
 }
 
-func NewConnect(conn *net.TCPConn, queueSize int32, readBufferSize, writeBufferSize int, handle func([]byte) []byte, handleFrame func(*Frame) *Frame) *Connect {
+func NewConnect(conn *net.TCPConn, queueSize int32, handle func([]byte) []byte, handleFrame func(*Frame) *Frame) *Connect {
 	conn.SetNoDelay(true)
 
 	return &Connect{
 		conn:   conn,
 		closed: make(chan struct{}),
-
-		readBufferSize:  readBufferSize,
-		writeBufferSize: writeBufferSize,
 
 		queueSize: queueSize,
 		inQueue:   make(chan *Frame, queueSize),

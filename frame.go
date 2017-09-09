@@ -29,7 +29,7 @@ const (
 	BodyTypePlain    byte = 0x04
 )
 
-const MaxLength uint32 = 1 << 16
+const MaxLength uint32 = 1<<16 - HeadLength
 
 var Reserved [4]byte = [4]byte{0, 0, 0, 0}
 
