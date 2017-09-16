@@ -24,9 +24,6 @@ type Server struct {
 	Version  byte // default 1 (0x01)
 	BodyType byte // default 1 (0x01, json)
 
-	QueueSize  int // frame queue in/out size
-	Processors int // goroutine number of one connection
-
 	Handle      func([]byte) []byte // one of handlers must not nil
 	HandleFrame func(*Frame) *Frame
 
@@ -54,13 +51,6 @@ func (s *Server) init() error {
 	}
 	if s.MaxLength == 0 {
 		s.MaxLength = MaxLength
-	}
-
-	if s.QueueSize == 0 {
-		s.QueueSize = QueueSize
-	}
-	if s.Processors == 0 {
-		s.Processors = Processors
 	}
 
 	s.close = make(chan struct{})
@@ -102,9 +92,9 @@ func (s *Server) Start() (err error) {
 func (s *Server) process(conn *net.TCPConn) {
 	log.Infof("accept connection from %s", conn.RemoteAddr())
 
-	c := NewConnect(conn, int32(s.QueueSize), s.Handle, s.HandleFrame)
+	c := NewConnect(conn, s)
+	c.Process(s.close)
 
-	c.Process(s.Processors, s.close)
 	s.wg.Done()
 }
 

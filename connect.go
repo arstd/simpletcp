@@ -1,91 +1,145 @@
 package simpletcp
 
 import (
+	"bufio"
+	"io"
 	"net"
 	"sync"
 
 	"github.com/arstd/log"
 )
 
-// For controlling dynamic buffer sizes.
-const (
-	startBufSize = 512
-	minBufSize   = 128
-	maxBufSize   = 65536
-)
-
 type Connect struct {
-	conn   *net.TCPConn
-	wg     sync.WaitGroup
-	closed chan struct{} // can read after connect closed
+	conn *net.TCPConn
+	wg   sync.WaitGroup
+	exit chan struct{} // can read after connect exit
 
-	queueSize         int32
-	inQueue, outQueue chan *Frame
+	br *bufio.Reader
+	bw *bufio.Writer
 
-	handle      func([]byte) []byte // one of handlers must not nil
-	handleFrame func(*Frame) *Frame
+	serv *Server
 }
 
-func NewConnect(conn *net.TCPConn, queueSize int32, handle func([]byte) []byte, handleFrame func(*Frame) *Frame) *Connect {
-	conn.SetNoDelay(true)
-
+func NewConnect(conn *net.TCPConn, serv *Server) *Connect {
 	return &Connect{
-		conn:   conn,
-		closed: make(chan struct{}),
+		conn: conn,
+		exit: make(chan struct{}),
 
-		queueSize: queueSize,
-		inQueue:   make(chan *Frame, queueSize),
-		outQueue:  make(chan *Frame, queueSize),
+		br: bufio.NewReader(conn),
+		bw: bufio.NewWriter(conn),
 
-		handle:      handle,
-		handleFrame: handleFrame,
+		serv: serv,
 	}
 }
 
-func (c *Connect) Process(procNum int, closeSignal <-chan struct{}) {
+func (c *Connect) Process(closeSignal <-chan struct{}) {
 	go c.waitSignal(closeSignal)
 
-	go c.readLoop()
+	for {
+		f := NewFrame()
+		_, err := io.ReadFull(c.br, f.Head)
+		if err != nil {
+			if err == io.EOF {
+				log.Infof("client %s leave", c.conn.RemoteAddr())
+			} else {
+				log.Error(err)
+			}
+			c.conn.CloseRead()
+			close(c.exit)
+			break
+		}
 
-	for i := 0; i < procNum; i++ {
-		c.wg.Add(1)
-		if c.handleFrame != nil {
-			go c.handleFrameLoop()
+		log.Debug(f)
+
+		fh := f.FixedHead()
+		if fh[0] != c.serv.Fixed[0] || fh[1] != c.serv.Fixed[1] {
+			log.Error(ErrFixedHead)
+			c.conn.CloseRead()
+			break
+		}
+		bl := f.BodyLength()
+		if bl > MaxLength {
+			log.Error(ErrBodyLengthExceed)
+			c.conn.CloseRead()
+			break
+		}
+
+		f.Body = make([]byte, bl)
+		_, err = io.ReadFull(c.br, f.Body)
+		if err != nil {
+			log.Error(err)
+			c.conn.CloseRead()
+			break
+		}
+
+		log.Debug(f)
+
+		go c.handle(f)
+	}
+
+	c.wg.Wait()
+	<-c.exit
+
+	log.Warn("close process")
+}
+
+func (c *Connect) handle(f *Frame) {
+	if f.Version() != VersionPing {
+		if c.serv.Handle != nil {
+			out := c.serv.Handle(f.Body)
+			f.SetBodyWithLength(out)
+		} else if c.serv.HandleFrame != nil {
+			f = c.serv.HandleFrame(f)
+			bl := uint32(len(f.Body))
+			if bl < MaxLength {
+				f.SetBodyLength(bl)
+			} else {
+				log.Error(ErrBodyLengthExceed)
+				f.SetBodyWithLength(nil)
+				return
+			}
 		} else {
-			go c.handleLoop()
+			close(c.exit)
+			log.Fatal("one of Handle or HandleFrame must be not nil")
 		}
 	}
 
-	go c.writeLoop()
+	c.write(f)
+}
 
-	// close read
-	// exit read loop
-	// close inQueue
-	// exit all handle loop
-	// close outQueue
-	// close write
+func (c *Connect) write(f *Frame) {
+	_, err := c.bw.Write(f.Head)
+	if err != nil {
+		log.Error(err)
+		c.conn.CloseWrite()
+		close(c.exit)
+	}
+	_, err = c.bw.Write(f.Body)
+	if err != nil {
+		log.Error(err)
+		c.conn.CloseWrite()
+		close(c.exit)
+	}
 
-	// hear wait all handle complete, frame sent to outQueue
-	c.wg.Wait()
-	log.Trace("all handle loop exit")
-	// close outQueue, write will close when outQueue closed
-	log.Trace("close outQueue")
-	close(c.outQueue)
-
-	// wait all data write complete
-	<-c.closed
-	log.Infof("close connection from %s", c.conn.RemoteAddr())
-	log.Errorn(c.conn.Close())
+	err = c.bw.Flush()
+	if err != nil {
+		log.Error(err)
+		c.conn.CloseWrite()
+		close(c.exit)
+	}
 }
 
 func (c *Connect) waitSignal(closeSignal <-chan struct{}) {
+	c.wg.Add(1)
 	select {
-	case <-closeSignal: // server will close, must close this connect
-		// inQueue close when read closed and read loop exit
-		// handle loop exit when inQueue closed
+	case <-closeSignal:
 		log.Trace("close read as server will close")
 		log.Errorn(c.conn.CloseRead())
-	case <-c.closed: // connect closed, must exit this method
+		close(c.exit)
+	case <-c.exit: // connect exit, must exit this method
 		// exit go routine
 	}
+	c.wg.Done()
+
+	log.Warn("close process")
 }

@@ -53,12 +53,12 @@ func single() {
 	f.SetMessageId(15)
 	f.SetBodyWithLength(body)
 
-	log.Fataln(tcpConn.Write(f.Head()))
+	log.Fataln(tcpConn.Write(f.Head))
 	log.Fataln(tcpConn.Write(f.Body))
 
 	// f = simpletcp.NewFrameDefault()
-	log.Debug(io.ReadFull(tcpConn, f.Head()))
-	f.SetBody(make([]byte, f.BodyLength()))
+	log.Debug(io.ReadFull(tcpConn, f.Head))
+	f.SetBodyOnly(make([]byte, f.BodyLength()))
 	log.Debug(io.ReadFull(tcpConn, f.Body))
 
 	log.Debug(f.String())
@@ -90,7 +90,7 @@ func send(count uint32) {
 
 			reserved := uint32(time.Now().UnixNano() / 1000)
 			binary.BigEndian.PutUint32(f.Reserved(), reserved)
-			log.Fataln(tcpConn.Write(f.Head()))
+			log.Fataln(tcpConn.Write(f.Head))
 			log.Fataln(tcpConn.Write(f.Body))
 
 			// log.Debug(f.String())
@@ -104,9 +104,9 @@ func send(count uint32) {
 	buf := make([]byte, simpletcp.MaxLength)
 	tcpConn.SetReadBuffer(4096 * 1024)
 	for i := uint32(1); i <= count; i++ {
-		log.Fataln(io.ReadFull(tcpConn, recv.Head()))
+		log.Fataln(io.ReadFull(tcpConn, recv.Head))
 		log.Debug(len(buf), recv.MessageId(), recv.BodyLength())
-		recv.SetBody(buf[:recv.BodyLength()])
+		recv.SetBodyOnly(buf[:recv.BodyLength()])
 		log.Fataln(io.ReadFull(tcpConn, recv.Body))
 
 		reserved := binary.BigEndian.Uint32(recv.Reserved())
