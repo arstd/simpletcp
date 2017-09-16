@@ -27,9 +27,9 @@ type Server struct {
 	Handle      func([]byte) []byte // one of handlers must not nil
 	HandleFrame func(*Frame) *Frame
 
-	l     *net.TCPListener
-	close chan struct{}  // send close signal
-	wg    sync.WaitGroup // wait all conns to close, then stop server
+	l    *net.TCPListener
+	exit chan struct{}  // send exit signal
+	wg   sync.WaitGroup // wait all conns to exit, then stop server
 }
 
 func (s *Server) init() error {
@@ -53,7 +53,7 @@ func (s *Server) init() error {
 		s.MaxLength = MaxLength
 	}
 
-	s.close = make(chan struct{})
+	s.exit = make(chan struct{})
 
 	return nil
 }
@@ -77,34 +77,35 @@ func (s *Server) Start() (err error) {
 		conn, err := s.l.AcceptTCP()
 		if err != nil {
 			select {
-			case <-s.close:
+			case <-s.exit:
 				return nil
 			default:
 				log.Error(err)
 				return err
 			}
 		}
-		s.wg.Add(1)
 		go s.process(conn)
 	}
 }
 
 func (s *Server) process(conn *net.TCPConn) {
+	s.wg.Add(1)
+
 	log.Infof("accept connection from %s", conn.RemoteAddr())
 
 	c := NewConnect(conn, s)
-	c.Process(s.close)
+	c.Run()
 
 	s.wg.Done()
 }
 
 func (s *Server) Close() error {
-	log.Trace("send server close signal")
-	close(s.close) // send close signal
+	log.Trace("send server exit signal")
+	close(s.exit) // send exit signal
 
 	s.wg.Wait()
-	log.Trace("all connection closed")
+	log.Trace("all connection exit")
 
-	log.Trace("close server")
+	log.Trace("exit server")
 	return s.l.Close()
 }

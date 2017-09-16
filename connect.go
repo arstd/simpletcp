@@ -11,11 +11,13 @@ import (
 
 type Connect struct {
 	conn *net.TCPConn
-	wg   sync.WaitGroup
-	exit chan struct{} // can read after connect exit
 
-	br *bufio.Reader
-	bw *bufio.Writer
+	exit chan struct{}
+	wg   sync.WaitGroup
+
+	br  *bufio.Reader
+	bw  *bufio.Writer
+	mux sync.Mutex
 
 	serv *Server
 }
@@ -23,6 +25,7 @@ type Connect struct {
 func NewConnect(conn *net.TCPConn, serv *Server) *Connect {
 	return &Connect{
 		conn: conn,
+
 		exit: make(chan struct{}),
 
 		br: bufio.NewReader(conn),
@@ -32,58 +35,68 @@ func NewConnect(conn *net.TCPConn, serv *Server) *Connect {
 	}
 }
 
-func (c *Connect) Process(closeSignal <-chan struct{}) {
-	go c.waitSignal(closeSignal)
+func (c *Connect) Run() {
+	go c.checkServExit()
 
 	for {
-		f := NewFrame()
-		_, err := io.ReadFull(c.br, f.Head)
+		f, err := c.read()
 		if err != nil {
-			if err == io.EOF {
-				log.Infof("client %s leave", c.conn.RemoteAddr())
-			} else {
-				log.Error(err)
-			}
-			c.conn.CloseRead()
-			close(c.exit)
 			break
 		}
 
-		log.Debug(f)
+		go func(f *Frame) {
+			c.wg.Add(1)
+			f = c.process(f)
 
-		fh := f.FixedHead()
-		if fh[0] != c.serv.Fixed[0] || fh[1] != c.serv.Fixed[1] {
-			log.Error(ErrFixedHead)
-			c.conn.CloseRead()
-			break
-		}
-		bl := f.BodyLength()
-		if bl > MaxLength {
-			log.Error(ErrBodyLengthExceed)
-			c.conn.CloseRead()
-			break
-		}
-
-		f.Body = make([]byte, bl)
-		_, err = io.ReadFull(c.br, f.Body)
-		if err != nil {
-			log.Error(err)
-			c.conn.CloseRead()
-			break
-		}
-
-		log.Debug(f)
-
-		go c.handle(f)
+			c.mux.Lock()
+			c.write(f)
+			c.mux.Unlock()
+			c.wg.Done()
+		}(f)
 	}
 
-	c.wg.Wait()
-	<-c.exit
+	close(c.exit)
 
-	log.Warn("close process")
+	c.wg.Wait()
+	log.Infof("client %s leave", c.conn.RemoteAddr())
 }
 
-func (c *Connect) handle(f *Frame) {
+func (c *Connect) read() (f *Frame, err error) {
+	f = NewFrame()
+	_, err = io.ReadFull(c.br, f.Head)
+	if err != nil {
+		if err == io.EOF {
+			log.Infof("client %s leave", c.conn.RemoteAddr())
+		} else {
+			log.Error(err)
+		}
+		return nil, err
+	}
+
+	log.Debug(f)
+
+	fh := f.FixedHead()
+	if fh[0] != c.serv.Fixed[0] || fh[1] != c.serv.Fixed[1] {
+		log.Error(ErrFixedHead)
+		return nil, ErrFixedHead
+	}
+	bl := f.BodyLength()
+	if bl > MaxLength {
+		log.Error(ErrBodyLengthExceed)
+		return nil, ErrBodyLengthExceed
+	}
+
+	f.Body = make([]byte, bl)
+	_, err = io.ReadFull(c.br, f.Body)
+	if err != nil {
+		log.Error(err)
+		return nil, err
+	}
+
+	return f, nil
+}
+
+func (c *Connect) process(f *Frame) *Frame {
 	if f.Version() != VersionPing {
 		if c.serv.Handle != nil {
 			out := c.serv.Handle(f.Body)
@@ -96,50 +109,38 @@ func (c *Connect) handle(f *Frame) {
 			} else {
 				log.Error(ErrBodyLengthExceed)
 				f.SetBodyWithLength(nil)
-				return
 			}
-		} else {
-			close(c.exit)
-			log.Fatal("one of Handle or HandleFrame must be not nil")
 		}
 	}
-
-	c.write(f)
+	return f
 }
 
 func (c *Connect) write(f *Frame) {
 	_, err := c.bw.Write(f.Head)
 	if err != nil {
 		log.Error(err)
-		c.conn.CloseWrite()
-		close(c.exit)
 	}
-	_, err = c.bw.Write(f.Body)
-	if err != nil {
-		log.Error(err)
-		c.conn.CloseWrite()
-		close(c.exit)
+
+	if f.BodyLength() > 0 {
+		_, err = c.bw.Write(f.Body)
+		if err != nil {
+			log.Error(err)
+		}
 	}
 
 	err = c.bw.Flush()
 	if err != nil {
 		log.Error(err)
-		c.conn.CloseWrite()
-		close(c.exit)
 	}
 }
 
-func (c *Connect) waitSignal(closeSignal <-chan struct{}) {
+func (c *Connect) checkServExit() {
 	c.wg.Add(1)
 	select {
-	case <-closeSignal:
+	case <-c.serv.exit:
 		log.Trace("close read as server will close")
 		log.Errorn(c.conn.CloseRead())
-		close(c.exit)
-	case <-c.exit: // connect exit, must exit this method
-		// exit go routine
+	case <-c.exit:
 	}
 	c.wg.Done()
-
-	log.Warn("close process")
 }
